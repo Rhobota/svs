@@ -1,0 +1,97 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "svs"
+dynamic = ["version"]
+description = 'Stupid Vector Store (SVS): a vector database for the rest of us'
+readme = "README.md"
+requires-python = ">=3.8"
+license = "MIT"
+keywords = ["vector", "embeddings", "database", "store", "stupid"]
+authors = [
+  { name = "Ryan Henning", email = "ryan@rhobota.com" },
+]
+classifiers = [
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: Implementation :: CPython",
+]
+dependencies = [
+  "aiohttp[speedups]",
+  "python-dotenv",
+]
+
+[project.urls]
+Documentation = "https://github.com/Rhobota/svs#readme"
+Issues = "https://github.com/Rhobota/svs/issues"
+Source = "https://github.com/Rhobota/svs"
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.10.0",
+  "pytest>=8.1.1",
+  "pytest-asyncio>=0.23.6",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/svs"]
+
+[tool.hatch.version]
+path = "src/svs/__init__.py"
+
+[tool.hatch.envs.types]
+features = ["dev"]
+
+[[tool.hatch.envs.types.matrix]]
+python = ["3.8", "3.9", "3.10", "3.11", "3.12"]
+
+[tool.hatch.envs.types.scripts]
+check = "mypy --install-types --non-interactive {args:src/svs tests examples}"
+
+[tool.hatch.envs.hatch-test]
+features = ["dev"]
+
+[[tool.hatch.envs.hatch-test.matrix]]
+python = ["3.8", "3.9", "3.10", "3.11", "3.12"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+
+[tool.coverage.run]
+source_pkgs = ["svs", "tests"]
+branch = true
+parallel = true
+omit = []
+
+[tool.coverage.paths]
+svs = ["src/svs", "*/svs/src/svs"]
+tests = ["tests", "*/svs/tests"]
+
+[tool.coverage.report]
+exclude_lines = [
+  "no cov",
+  "if __name__ == .__main__.:",
+  "if TYPE_CHECKING:",
+]
+
+[tool.mypy]
+mypy_path = ["src"]
+implicit_reexport = false
+allow_redefinition = true
+strict_equality = true
+warn_return_any = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unreachable = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
