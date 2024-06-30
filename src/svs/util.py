@@ -8,8 +8,10 @@ import os
 
 from typing import (
     Optional, Union, Dict, Literal,
-    TypeVar, ParamSpec, Callable, Awaitable,
+    TypeVar, Callable, Awaitable,
 )
+
+from typing_extensions import ParamSpec
 
 import logging
 
