@@ -48,8 +48,9 @@ async def test_file_cached_wget():
     url = 'https://raw.githubusercontent.com/Rhobota/svs/main/logos/svs.png'
     cache_location = '.remote_cache/2cff95e6fe5a3de0e7ff3270dae85f6c'
 
-    os.unlink(cache_location)
-    assert not os.path.exists(cache_location)
+    if os.path.exists(cache_location):
+        os.unlink(cache_location)
+        assert not os.path.exists(cache_location)
 
     data1 = await file_cached_wget(url)
     assert len(data1) == 23123
