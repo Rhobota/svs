@@ -40,7 +40,6 @@ def locked(
 
 def cached(
     maxsize: Optional[int] = None,
-    cache: Union[OrderedDict[int, T], None] = None,
 ) -> Callable[[Callable[P, Awaitable[T]]], Callable[P, Awaitable[T]]]:
     """
     Cache an async function with an LRU cache.
@@ -51,23 +50,25 @@ def cached(
     This decorator also ensure that calls to the wrapped async function
     are not run concurrently for the *same* input.
     """
-    if cache is None:
-        cache = OrderedDict()
-    events: Dict[int, asyncio.Event] = {}
     def decorator(wrapped: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
+        cache: OrderedDict[int, T] = OrderedDict()
+        events: Dict[int, asyncio.Event] = {}
         @functools.wraps(wrapped)
         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             key = hash((args, tuple(sorted(kwargs.items()))))
             while True:
                 if key in cache:
+                    _LOG.info(f"cached({key}): CACHE HIT")
                     cache.move_to_end(key)
                     return cache[key]
                 if key in events:
                     event = events[key]
+                    _LOG.info(f"cached({key}): avoiding concurrency")
                     await event.wait()
                 else:
                     event = asyncio.Event()
                     events[key] = event
+                    _LOG.info(f"cached({key}): cache miss ... will compute")
                     try:
                         res = await wrapped(*args, **kwargs)
                         cache[key] = res
@@ -100,12 +101,14 @@ async def file_cached_wget(url: str) -> bytes:
     path = os.path.join('.remote_cache', hash)
     def _read_local() -> Union[bytes, Literal[False]]:
         if os.path.exists(path):
+            _LOG.info(f"file_cached_wget({repr(url)}): CACHE HIT")
             with open(path, 'rb') as f:
                 return f.read()
         return False
     local_result = await loop.run_in_executor(None, _read_local)
     if local_result is not False:
         return local_result
+    _LOG.info(f"file_cached_wget({repr(url)}): cache miss ... will *get*")
     async with aiohttp.ClientSession(raise_for_status=True) as session:
         async with session.get(url) as response:
             data = await response.read()
