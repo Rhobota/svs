@@ -6,8 +6,10 @@ import functools
 import hashlib
 import os
 
+import numpy as np
+
 from typing import (
-    Optional, Union, Dict, Literal,
+    Optional, Union, Dict, Literal, List, Tuple,
     TypeVar, Callable, Awaitable,
 )
 
@@ -130,3 +132,19 @@ async def file_cached_wget(url: str) -> bytes:
             raise e
     await loop.run_in_executor(None, _write_local)
     return data
+
+
+def get_top_k(scores: np.ndarray, top_k: int) -> List[Tuple[float, int]]:
+    """
+    As efficiently as possible, find the `top_k` scores in the `scores` array.
+    Returns a list of length `top_k` of tuples:
+      (score, index)
+    """
+    assert scores.ndim == 1
+    assert isinstance(top_k, int)
+    if top_k > len(scores):
+        top_k = len(scores)
+    if top_k <= 0:
+        return []
+    indices = np.argpartition(scores, -top_k)[-top_k:]
+    return sorted([(float(scores[i]), i) for i in indices], reverse=True)
