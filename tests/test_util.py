@@ -3,10 +3,13 @@ import asyncio
 import random
 import os
 
+import numpy as np
+
 from svs.util import (
     locked,
     cached,
     file_cached_wget,
+    get_top_k,
 )
 
 
@@ -58,3 +61,264 @@ async def test_file_cached_wget():
 
     data2 = await file_cached_wget(url)
     assert data1 == data2
+
+
+def test_get_top_k():
+    scores = np.array([])
+
+    top = list(get_top_k(scores, top_k=0))
+    assert len(top) == 0
+
+    top = list(get_top_k(scores, top_k=1))
+    assert len(top) == 0
+
+    scores = np.array([0.4])
+
+    top = list(get_top_k(scores, top_k=0))
+    assert len(top) == 0
+
+    top = list(get_top_k(scores, top_k=1))
+    assert len(top) == 1
+    s, i = top[0]
+    assert s == 0.4
+    assert i == 0
+
+    top = list(get_top_k(scores, top_k=2))
+    assert len(top) == 1
+    s, i = top[0]
+    assert s == 0.4
+    assert i == 0
+
+    scores = np.array([0.4, 0.2])
+
+    top = list(get_top_k(scores, top_k=0))
+    assert len(top) == 0
+
+    top = list(get_top_k(scores, top_k=1))
+    assert len(top) == 1
+    s, i = top[0]
+    assert s == 0.4
+    assert i == 0
+
+    top = list(get_top_k(scores, top_k=2))
+    assert len(top) == 2
+    s, i = top[0]
+    assert s == 0.4
+    assert i == 0
+    s, i = top[1]
+    assert s == 0.2
+    assert i == 1
+
+    top = list(get_top_k(scores, top_k=3))
+    assert len(top) == 2
+    s, i = top[0]
+    assert s == 0.4
+    assert i == 0
+    s, i = top[1]
+    assert s == 0.2
+    assert i == 1
+
+    scores = np.array([0.2, 0.4])
+
+    top = list(get_top_k(scores, top_k=0))
+    assert len(top) == 0
+
+    top = list(get_top_k(scores, top_k=1))
+    assert len(top) == 1
+    s, i = top[0]
+    assert s == 0.4
+    assert i == 1
+
+    top = list(get_top_k(scores, top_k=2))
+    assert len(top) == 2
+    s, i = top[0]
+    assert s == 0.4
+    assert i == 1
+    s, i = top[1]
+    assert s == 0.2
+    assert i == 0
+
+    top = list(get_top_k(scores, top_k=3))
+    assert len(top) == 2
+    s, i = top[0]
+    assert s == 0.4
+    assert i == 1
+    s, i = top[1]
+    assert s == 0.2
+    assert i == 0
+
+    scores = np.array([0.4, 0.2, 0.8])
+
+    top = list(get_top_k(scores, top_k=0))
+    assert len(top) == 0
+
+    top = list(get_top_k(scores, top_k=1))
+    assert len(top) == 1
+    s, i = top[0]
+    assert s == 0.8
+    assert i == 2
+
+    top = list(get_top_k(scores, top_k=2))
+    assert len(top) == 2
+    s, i = top[0]
+    assert s == 0.8
+    assert i == 2
+    s, i = top[1]
+    assert s == 0.4
+    assert i == 0
+
+    top = list(get_top_k(scores, top_k=3))
+    assert len(top) == 3
+    s, i = top[0]
+    assert s == 0.8
+    assert i == 2
+    s, i = top[1]
+    assert s == 0.4
+    assert i == 0
+    s, i = top[2]
+    assert s == 0.2
+    assert i == 1
+
+    top = list(get_top_k(scores, top_k=4))
+    assert len(top) == 3
+    s, i = top[0]
+    assert s == 0.8
+    assert i == 2
+    s, i = top[1]
+    assert s == 0.4
+    assert i == 0
+    s, i = top[2]
+    assert s == 0.2
+    assert i == 1
+
+    scores = np.array([0.4, 0.8, 0.2])
+
+    top = list(get_top_k(scores, top_k=0))
+    assert len(top) == 0
+
+    top = list(get_top_k(scores, top_k=1))
+    assert len(top) == 1
+    s, i = top[0]
+    assert s == 0.8
+    assert i == 1
+
+    top = list(get_top_k(scores, top_k=2))
+    assert len(top) == 2
+    s, i = top[0]
+    assert s == 0.8
+    assert i == 1
+    s, i = top[1]
+    assert s == 0.4
+    assert i == 0
+
+    top = list(get_top_k(scores, top_k=3))
+    assert len(top) == 3
+    s, i = top[0]
+    assert s == 0.8
+    assert i == 1
+    s, i = top[1]
+    assert s == 0.4
+    assert i == 0
+    s, i = top[2]
+    assert s == 0.2
+    assert i == 2
+
+    top = list(get_top_k(scores, top_k=4))
+    assert len(top) == 3
+    s, i = top[0]
+    assert s == 0.8
+    assert i == 1
+    s, i = top[1]
+    assert s == 0.4
+    assert i == 0
+    s, i = top[2]
+    assert s == 0.2
+    assert i == 2
+
+    scores = np.array([0.8, 0.4, 0.2])
+
+    top = list(get_top_k(scores, top_k=0))
+    assert len(top) == 0
+
+    top = list(get_top_k(scores, top_k=1))
+    assert len(top) == 1
+    s, i = top[0]
+    assert s == 0.8
+    assert i == 0
+
+    top = list(get_top_k(scores, top_k=2))
+    assert len(top) == 2
+    s, i = top[0]
+    assert s == 0.8
+    assert i == 0
+    s, i = top[1]
+    assert s == 0.4
+    assert i == 1
+
+    top = list(get_top_k(scores, top_k=3))
+    assert len(top) == 3
+    s, i = top[0]
+    assert s == 0.8
+    assert i == 0
+    s, i = top[1]
+    assert s == 0.4
+    assert i == 1
+    s, i = top[2]
+    assert s == 0.2
+    assert i == 2
+
+    top = list(get_top_k(scores, top_k=4))
+    assert len(top) == 3
+    s, i = top[0]
+    assert s == 0.8
+    assert i == 0
+    s, i = top[1]
+    assert s == 0.4
+    assert i == 1
+    s, i = top[2]
+    assert s == 0.2
+    assert i == 2
+
+    scores = np.array([0.8, 0.2, 0.4])
+
+    top = list(get_top_k(scores, top_k=0))
+    assert len(top) == 0
+
+    top = list(get_top_k(scores, top_k=1))
+    assert len(top) == 1
+    s, i = top[0]
+    assert s == 0.8
+    assert i == 0
+
+    top = list(get_top_k(scores, top_k=2))
+    assert len(top) == 2
+    s, i = top[0]
+    assert s == 0.8
+    assert i == 0
+    s, i = top[1]
+    assert s == 0.4
+    assert i == 2
+
+    top = list(get_top_k(scores, top_k=3))
+    assert len(top) == 3
+    s, i = top[0]
+    assert s == 0.8
+    assert i == 0
+    s, i = top[1]
+    assert s == 0.4
+    assert i == 2
+    s, i = top[2]
+    assert s == 0.2
+    assert i == 1
+
+    top = list(get_top_k(scores, top_k=4))
+    assert len(top) == 3
+    s, i = top[0]
+    assert s == 0.8
+    assert i == 0
+    s, i = top[1]
+    assert s == 0.4
+    assert i == 2
+    s, i = top[2]
+    assert s == 0.2
+    assert i == 1
