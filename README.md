@@ -5,6 +5,7 @@
 [![PyPI - Version](https://img.shields.io/pypi/v/svs.svg)](https://pypi.org/project/svs)
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/svs.svg)](https://pypi.org/project/svs)
 ![Test Status](https://github.com/Rhobota/svs/actions/workflows/test.yml/badge.svg?branch=main)
+[![Downloads](https://static.pepy.tech/badge/svs)](https://pepy.tech/project/svs)
 
 ## Overview
 
@@ -14,7 +15,7 @@ SVS is stupid yet can handle a million documents on commodity hardware, so it's 
  1. you have less than a million documents, and
  2. you don't add/remove documents very often.
 
-If that's you, then SVS will probably be the simples (and stupidest) way to manage your document vectors!
+If that's you, then SVS will probably be the simples (and _stupidest_) way to manage your document vectors!
 
 ## Table of Contents
 
