@@ -1,9 +1,28 @@
 import aiohttp
 import os
+import struct
 
 from typing import List, Optional, Dict, Any
 
 from .types import EmbeddingFunc
+
+
+def embedding_to_bytes(embedding: List[float]) -> bytes:
+    return struct.pack(f'<{len(embedding)}f', *embedding)
+
+
+def embedding_from_bytes(embedding: bytes) -> List[float]:
+    return list(struct.unpack_from('<f', embedding))
+
+
+def make_embeddings_func(
+    factory_name: str,
+    factory_params: Dict[str, Any],
+) -> EmbeddingFunc:
+    if factory_name == 'openai':
+        return make_openai_embeddings_func(**factory_params)
+    else:
+        raise ValueError(f"unknown facotry name: {factory_name}")
 
 
 def make_openai_embeddings_func(
