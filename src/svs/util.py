@@ -105,12 +105,12 @@ async def file_cached_wget(url: str) -> bytes:
     path = os.path.join('.remote_cache', hash)
     def _read_local() -> Union[bytes, Literal[False]]:
         if os.path.exists(path):
-            _LOG.info(f"file_cached_wget({repr(url)}): CACHE HIT")
             with open(path, 'rb') as f:
                 return f.read()
         return False
     local_result = await loop.run_in_executor(None, _read_local)
     if local_result is not False:
+        _LOG.info(f"file_cached_wget({repr(url)}): CACHE HIT")
         return local_result
     _LOG.info(f"file_cached_wget({repr(url)}): cache miss ... will *get*")
     async with aiohttp.ClientSession(raise_for_status=True) as session:
