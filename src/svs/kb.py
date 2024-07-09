@@ -26,6 +26,9 @@ _LOG = logging.getLogger(__name__)
 assert sqlite3.threadsafety > 0, "sqlite3 was not compiled in thread-safe mode"  # see ref [1]
 
 
+# TODO: insert into keyval: schema version, created_datetime
+
+
 _TABLE_DEFS = """
 
 CREATE TABLE IF NOT EXISTS keyval (
@@ -459,19 +462,3 @@ class KB:
         n: int,
     ) -> List[DocumentRecord]:
         return []   # TODO
-
-    async def set_key(self, key: str, val: Any) -> None:
-        db = await self._ensure_db()
-        def heavy() -> None:
-            with db as q:
-                return q.set_key(key, val)
-        async with self.db_lock:
-            return await self.loop.run_in_executor(None, heavy)
-
-    async def del_key(self, key: str) -> None:
-        db = await self._ensure_db()
-        def heavy() -> None:
-            with db as q:
-                return q.del_key(key)
-        async with self.db_lock:
-            return await self.loop.run_in_executor(None, heavy)
