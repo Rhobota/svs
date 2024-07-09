@@ -1,6 +1,7 @@
 import asyncio
 import sqlite3
 import json
+from datetime import datetime, timezone
 
 from types import TracebackType
 from typing import (
@@ -26,8 +27,10 @@ _LOG = logging.getLogger(__name__)
 assert sqlite3.threadsafety > 0, "sqlite3 was not compiled in thread-safe mode"  # see ref [1]
 
 
-# TODO: insert into keyval: schema version, created_datetime
+# TODO: bulk add docs, bulk delete docs
 
+
+_SCHEMA_VERSION = 1   # !!! IF YOU CHANGE THE SCHEMA, BUMP THIS VERSION AND WRITE A MIGRATION FUNCTION !!!
 
 _TABLE_DEFS = """
 
@@ -348,6 +351,20 @@ class _DB:
             self.conn.close()
             self.conn = None
 
+    def check_or_set_schema_version(self) -> None:
+        with self as q:
+            try:
+                schema_version = q.get_key('schema_version')
+            except KeyError:
+                # This must be a new database, so we'll just set it.
+                q.set_key('schema_version', _SCHEMA_VERSION)
+                q.set_key('created_datetime', datetime.now(timezone.utc).isoformat())
+                return
+        if schema_version != _SCHEMA_VERSION:
+            # We only have once version so far, so ... how are we here!?
+            # PS: In the future, this is where migrations will go.
+            raise RuntimeError('unreachable')
+
 
 class KB:
     """Stupid simple knowledge base."""
@@ -368,6 +385,7 @@ class KB:
             def heavy() -> _DB:
                 db = _DB(self.db_file_path)
                 try:
+                    db.check_or_set_schema_version()
                     with db as q:
                         try:
                             db_eparams = json.loads(q.get_key('embedding_func_params'))

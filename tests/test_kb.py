@@ -343,6 +343,7 @@ async def test_kb_init_and_close():
         assert json.loads(q.get_key('embedding_func_params')) == {
             'provider': 'mock',
         }
+        assert q.get_key('schema_version') == 1
     db.close()
 
     # Prev database; it should rebuild the mock embedding func.
