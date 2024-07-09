@@ -12,7 +12,10 @@ def embedding_to_bytes(embedding: List[float]) -> bytes:
 
 
 def embedding_from_bytes(embedding: bytes) -> List[float]:
-    return list(struct.unpack_from('<f', embedding))
+    size = struct.calcsize('<f')
+    assert (len(embedding) % size) == 0
+    n_items = len(embedding) // size
+    return list(struct.unpack(f'<{n_items}f', embedding))
 
 
 def make_embeddings_func(

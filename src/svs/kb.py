@@ -117,19 +117,6 @@ class _Querier:
         if res.rowcount == 0:
             raise KeyError(key)
 
-    def _debug_keyval(self) -> Dict[str, Any]:
-        res = self.conn.execute(
-            """
-            SELECT key, val
-            FROM keyval
-            """,
-            (),
-        )
-        return {
-            row[0]: row[1]
-            for row in res
-        }
-
     def add_doc(
         self,
         text: str,
@@ -265,6 +252,45 @@ class _Querier:
             'embedding': embedding,
             'meta': meta,
         }
+
+    def _debug_keyval(self) -> Dict[str, Any]:
+        res = self.conn.execute(
+            """
+            SELECT key, val
+            FROM keyval
+            """,
+            (),
+        )
+        return {
+            row[0]: row[1]
+            for row in res
+        }
+
+    def _debug_embeddings(self) -> List[Tuple]:
+        res = self.conn.execute(
+            """
+            SELECT *
+            FROM embeddings
+            """,
+            (),
+        )
+        return [
+            tuple(row)
+            for row in res
+        ]
+
+    def _debug_docs(self) -> List[Tuple]:
+        res = self.conn.execute(
+            """
+            SELECT *
+            FROM docs
+            """,
+            (),
+        )
+        return [
+            tuple(row)
+            for row in res
+        ]
 
 
 class _DB:
