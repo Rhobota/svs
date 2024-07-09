@@ -23,6 +23,7 @@ import logging
 _LOG = logging.getLogger(__name__)
 
 
+assert sqlite3.sqlite_version_info >= (3, 37, 0), "strict mode not supported"
 assert sqlite3.threadsafety > 0, "sqlite3 was not compiled in thread-safe mode"  # see ref [1]
 
 

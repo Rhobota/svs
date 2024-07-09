@@ -7,6 +7,17 @@
 ![Test Status](https://github.com/Rhobota/svs/actions/workflows/test.yml/badge.svg?branch=main)
 [![Downloads](https://static.pepy.tech/badge/svs)](https://pepy.tech/project/svs)
 
+- 💩 Why is it _stupid_?
+  - Because it just uses [SQLite](https://www.sqlite.org/) and [NumPy](https://numpy.org/). Nothing fancy.
+  - This is our core design choice. We want something _stupid simple_.
+
+- 🧠 Is it possibly... _smart_ in any way though?
+  - Maybe.
+  - **It will squeeze the most juice from your machine: 🍊**
+     - Optimized SQL
+     - Cache-friendly memory access
+     - All with a simple Python interface
+
 ## Overview
 
 SVS is stupid yet can handle a million documents on commodity hardware, so it's probably perfect for you.
