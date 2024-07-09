@@ -1,11 +1,15 @@
 import pytest
 
 import os
-import numpy as np
+import json
 
-from typing import List
+from svs.embeddings import (
+    make_mock_embeddings_func,
+    make_openai_embeddings_func,
+)
 
 from svs.kb import (
+    KB,
     _DB,
     SQLITE_IS_STRICT,
 )
@@ -315,5 +319,51 @@ def test_vacuum():
     with db as q:
         assert q._debug_keyval() == {
             'this': 'hi!',
+        }
+    db.close()
+
+
+@pytest.mark.asyncio
+async def test_kb_init_and_close():
+    # New database; not passing an embedding function.
+    kb = KB(_DB_PATH)
+    with pytest.raises(RuntimeError):
+        # The following will raise because we are in a new database without
+        # passing an embedding function.
+        await kb.close()
+
+    # New database; this time passing an embedding function.
+    kb = KB(_DB_PATH, make_mock_embeddings_func())
+    await kb.close()
+    assert kb.embedding_func.__name__ == 'mock_embeddings'  # type: ignore
+
+    # Check that the embedding function was stored in the database above!
+    db = _DB(_DB_PATH)
+    with db as q:
+        assert json.loads(q.get_key('embedding_func_params')) == {
+            'provider': 'mock',
+        }
+    db.close()
+
+    # Prev database; it should rebuild the mock embedding func.
+    kb = KB(_DB_PATH)
+    await kb.close()
+    assert kb.embedding_func.__name__ == 'mock_embeddings'  # type: ignore
+
+    # Prev database; override the embedding func.
+    kb = KB(_DB_PATH, make_openai_embeddings_func('fake_model', 'fake_apikey'))
+    await kb.close()
+    assert kb.embedding_func.__name__ == 'openai_embeddings'  # type: ignore
+
+    # Prev database; check that vacuum works.
+    kb = KB(_DB_PATH)
+    await kb.close(vacuum=True)
+    assert kb.embedding_func.__name__ == 'mock_embeddings'  # type: ignore
+
+    # Check that the embedding function is *unchanged*.
+    db = _DB(_DB_PATH)
+    with db as q:
+        assert json.loads(q.get_key('embedding_func_params')) == {
+            'provider': 'mock',
         }
     db.close()

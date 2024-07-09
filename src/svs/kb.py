@@ -300,9 +300,14 @@ class _DB:
             isolation_level=None,     # <-- manual transactions
             check_same_thread=False,  # <-- see ref [1]
         )
-        self.conn.cursor().executescript(_TABLE_DEFS)
-        self.conn.commit()
         self.in_transaction = False
+        try:
+            self.conn.cursor().executescript(_TABLE_DEFS)
+            self.conn.commit()
+        except:
+            self.conn.close()
+            self.conn = None
+            raise
 
     def __enter__(self) -> _Querier:
         assert self.conn is not None
@@ -354,6 +359,48 @@ class KB:
         self.db: Union[_DB, None] = None
         self.db_lock = asyncio.Lock()
         self.embedding_func = embedding_func
+
+    async def _ensure_db(self) -> _DB:
+        if self.db is None:
+            def heavy() -> _DB:
+                db = _DB(self.db_file_path)
+                try:
+                    with db as q:
+                        try:
+                            db_eparams = json.loads(q.get_key('embedding_func_params'))
+                        except KeyError:
+                            db_eparams = None
+                    init_eparams = getattr(self.embedding_func, '__embedding_func_params__', None)
+                    if db_eparams is not None and init_eparams is not None:
+                        if db_eparams != init_eparams:
+                            _LOG.warning(f"You are overriding the embedding function stored in the database! Be sure this is what you want to do. Your function: {init_eparams}, database function: {db_eparams}")
+                    elif db_eparams is not None:
+                        if self.embedding_func is not None:
+                            _LOG.warning(f"You are overriding the embedding function stored in the database! Be sure this is what you want to do. Your function: *unknown params*, database function: {db_eparams}")
+                        else:
+                            self.embedding_func = make_embeddings_func(db_eparams)
+                    elif init_eparams is not None:
+                        with db as q:
+                            q.set_key('embedding_func_params', json.dumps(init_eparams))
+                    else:
+                        raise RuntimeError("No embedding function. You did not passed one to constructor and there is not one in the database. You must pass the embedding function you want to use to the constructor on the *first* usage of a new database; it will be stored in the database for later use.")
+                    return db
+                except:
+                    db.close()
+                    raise
+            db = await self.loop.run_in_executor(None, heavy)
+            self.db = db
+        return self.db
+
+    async def close(self, vacuum: bool = False) -> None:
+        async with self.db_lock:
+            db = await self._ensure_db()
+            def heavy() -> None:
+                if vacuum:
+                    db.vacuum()
+                db.close()
+            await self.loop.run_in_executor(None, heavy)
+            self.db = None
 
     async def add_doc(
         self,
@@ -410,28 +457,3 @@ class KB:
                 return q.del_key(key)
         async with self.db_lock:
             return await self.loop.run_in_executor(None, heavy)
-
-    async def _ensure_db(self) -> _DB:
-        if self.db is None:
-            def heavy() -> _DB:
-                # TODO: detect when db is fresh and empty - insert version, provider, model
-                return _DB(self.db_file_path)
-            async with self.db_lock:
-                db = await self.loop.run_in_executor(None, heavy)
-                self.db = db
-        return self.db
-
-    async def _get_embedding(self, texts: List[str]) -> List[bytes]:
-        db = await self._ensure_db()
-        def heavy() -> Tuple[str, Dict[str, Any]]:
-            with db as q:
-                factory_name = cast(str, q.get_key('embedding_factory_name'))
-                factory_params = cast(str, q.get_key('embedding_factory_params'))
-                return factory_name, json.loads(factory_params)
-        factory_name, factory_params = await self.loop.run_in_executor(None, heavy)
-        func = make_embeddings_func(factory_name, factory_params)
-        embeddings = await func(texts)
-        return [
-            embedding_to_bytes(embedding)
-            for embedding in embeddings
-        ]
