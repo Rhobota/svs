@@ -16,7 +16,7 @@ from .embeddings import (
     make_embeddings_func,
 )
 
-from .types import DocumentId, DocumentRecord
+from .types import DocumentId, DocumentRecord, EmbeddingFunc
 
 import logging
 
@@ -347,19 +347,24 @@ class KB:
     def __init__(
         self,
         db_file_path: str,
+        embedding_func: Optional[EmbeddingFunc] = None,
     ):
         self.loop = asyncio.get_running_loop()
         self.db_file_path = db_file_path
         self.db: Union[_DB, None] = None
         self.db_lock = asyncio.Lock()
+        self.embedding_func = embedding_func
 
     async def add_doc(
         self,
         text: str,
         parent_id: Optional[DocumentId] = None,
         meta: Optional[Dict[str, Any]] = None,
+        no_embedding: bool = False,
     ) -> DocumentId:
-        embedding = (await self._get_embedding([text]))[0]
+        embedding = None
+        if not no_embedding:
+            embedding = (await self._get_embedding([text]))[0]
         db = await self._ensure_db()
         def heavy() -> DocumentId:
             with db as q:

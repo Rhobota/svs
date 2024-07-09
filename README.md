@@ -9,13 +9,14 @@
 
 - 💩 Why is it _stupid_?
   - Because it just uses [SQLite](https://www.sqlite.org/) and [NumPy](https://numpy.org/). Nothing fancy.
-  - This is our core design choice. We want something _stupid simple_.
+  - That is our core design choice. We want something _stupid simple_, yet fast.
 
 - 🧠 Is it possibly... _smart_ in any way though?
   - Maybe.
   - **It will squeeze the most juice from your machine: 🍊**
      - Optimized SQL
      - Cache-friendly memory access
+     - Fast in the places that matter 🚀
      - All with a simple Python interface
 
 ## Overview
