@@ -7,6 +7,7 @@ from typing import List
 
 from svs.kb import (
     _DB,
+    SQLITE_IS_STRICT,
 )
 
 
@@ -42,7 +43,10 @@ def test_keyval_table():
     with db as q:
         q.set_key('b', '99')
     with db as q:
-        assert q.get_key('b') == '99'
+        if SQLITE_IS_STRICT:
+            assert q.get_key('b') == '99'
+        else:
+            assert q.get_key('b') == 99
     with db as q:
         assert q._debug_keyval() == {
             'a': 77,
@@ -54,7 +58,10 @@ def test_keyval_table():
     db = _DB(_DB_PATH)
     with db as q:
         assert q.get_key('a') == 77
-        assert q.get_key('b') == '99'
+        if SQLITE_IS_STRICT:
+            assert q.get_key('b') == '99'
+        else:
+            assert q.get_key('b') == 99
     with db as q:
         for key in ['DNE']:
             with pytest.raises(KeyError):
@@ -70,7 +77,10 @@ def test_keyval_table():
     db = _DB(_DB_PATH)
     with db as q:
         assert q.get_key('a') == 77
-        assert q.get_key('b') == '99'
+        if SQLITE_IS_STRICT:
+            assert q.get_key('b') == '99'
+        else:
+            assert q.get_key('b') == 99
     with db as q:
         for key in ['DNE']:
             with pytest.raises(KeyError):

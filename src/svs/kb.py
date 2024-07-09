@@ -70,9 +70,11 @@ change our minds.
 """
 
 
+SQLITE_IS_STRICT = True
 if sqlite3.sqlite_version_info < (3, 37, 0):
     _LOG.warning("SQLite strict mode not supported; will use non-strict mode")
     _TABLE_DEFS = _TABLE_DEFS.replace(' STRICT;', ';')
+    SQLITE_IS_STRICT = False
 
 
 class _Querier:
