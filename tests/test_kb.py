@@ -42,15 +42,16 @@ def test_keyval_table():
         assert q.get_key('a') == 77
     with db as q:
         q.set_key('b', '99')
-    with db as q:
+        # This is why *strict* mode is better:
         if SQLITE_IS_STRICT:
             assert q.get_key('b') == '99'
         else:
             assert q.get_key('b') == 99
+        q.set_key('b', 'hi')
     with db as q:
         assert q._debug_keyval() == {
             'a': 77,
-            'b': '99',
+            'b': 'hi',
         }
     db.close()
 
@@ -58,10 +59,7 @@ def test_keyval_table():
     db = _DB(_DB_PATH)
     with db as q:
         assert q.get_key('a') == 77
-        if SQLITE_IS_STRICT:
-            assert q.get_key('b') == '99'
-        else:
-            assert q.get_key('b') == 99
+        assert q.get_key('b') == 'hi'
     with db as q:
         for key in ['DNE']:
             with pytest.raises(KeyError):
@@ -69,7 +67,7 @@ def test_keyval_table():
     with db as q:
         assert q._debug_keyval() == {
             'a': 77,
-            'b': '99',
+            'b': 'hi',
         }
     db.close()
 
@@ -77,10 +75,7 @@ def test_keyval_table():
     db = _DB(_DB_PATH)
     with db as q:
         assert q.get_key('a') == 77
-        if SQLITE_IS_STRICT:
-            assert q.get_key('b') == '99'
-        else:
-            assert q.get_key('b') == 99
+        assert q.get_key('b') == 'hi'
     with db as q:
         for key in ['DNE']:
             with pytest.raises(KeyError):
