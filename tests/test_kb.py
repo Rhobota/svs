@@ -11,12 +11,6 @@ from svs.kb import (
 )
 
 
-# Things to test:
-# - transactions (commit, rollback)
-# - unique keys
-# - foreign keys
-
-
 _DB_PATH = './testdb.sqlite'
 
 
@@ -271,4 +265,55 @@ def test_doc_table():
             (5, 4, 3, 'fifth doc', None, '{"test": 5}'),
         ]
 
+    db.close()
+
+
+def test_rollback():
+    # Open the database
+    db = _DB(_DB_PATH)
+    with db as q:
+        assert q._debug_keyval() == {}
+        q.set_key('this', 'will persist')
+        assert q._debug_keyval() == {
+            'this': 'will persist',
+        }
+    saw_staged_update = False
+    with pytest.raises(KeyError):
+        with db as q:
+            assert q._debug_keyval() == {
+                'this': 'will persist',
+            }
+            q.set_key('this', 'will be rolled back')
+            assert q._debug_keyval() == {
+                'this': 'will be rolled back',
+            }
+            saw_staged_update = True
+            q.del_key('dne')   # <-- this raises KeyError; since it's uncaught it will `rollback` the transaction!
+    assert saw_staged_update
+    with db as q:
+        # Check that the transaction was rolled back (i.e. `test` wasn't updated).
+        assert q._debug_keyval() == {
+            'this': 'will persist',
+        }
+    db.close()
+
+
+def test_vacuum():
+    # Open the database
+    db = _DB(_DB_PATH)
+    with db as q:
+        assert q._debug_keyval() == {}
+        q.set_key('this', 'hi!')
+        assert q._debug_keyval() == {
+            'this': 'hi!',
+        }
+    db.vacuum()
+    db.close()
+
+    # **Re-open** the database
+    db = _DB(_DB_PATH)
+    with db as q:
+        assert q._debug_keyval() == {
+            'this': 'hi!',
+        }
     db.close()
