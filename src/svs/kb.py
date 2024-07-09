@@ -23,7 +23,6 @@ import logging
 _LOG = logging.getLogger(__name__)
 
 
-assert sqlite3.sqlite_version_info >= (3, 37, 0), "strict mode not supported"
 assert sqlite3.threadsafety > 0, "sqlite3 was not compiled in thread-safe mode"  # see ref [1]
 
 
@@ -69,6 +68,11 @@ benefit from allowing concurrent reads to the underlying SQLite file (despite SQ
 theoretically supporting this) so I'd rather play it safe. We can revisit this if we
 change our minds.
 """
+
+
+if sqlite3.sqlite_version_info < (3, 37, 0):
+    _LOG.warning("SQLite strict mode not supported; will use non-strict mode")
+    _TABLE_DEFS = _TABLE_DEFS.replace(' STRICT;', ';')
 
 
 class _Querier:
