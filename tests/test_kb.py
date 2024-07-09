@@ -367,3 +367,54 @@ async def test_kb_init_and_close():
             'provider': 'mock',
         }
     db.close()
+
+
+@pytest.mark.asyncio
+async def test_kb_add_del_doc():
+    # New database!
+    kb = KB(_DB_PATH, make_mock_embeddings_func())
+    assert (await kb.add_doc("first doc")) == 1
+    await kb.close()
+
+    # Prev database; let it remember the embedding function!
+    kb = KB(_DB_PATH)
+    assert (await kb.add_doc("second doc", 1, meta={'a': 'b'})) == 2
+    assert (await kb.add_doc("third doc", 1, no_embedding=True)) == 3
+    await kb.close()
+
+    # Check the database:
+    db = _DB(_DB_PATH)
+    with db as q:
+        assert json.loads(q.get_key('embedding_func_params')) == {
+            'provider': 'mock',
+        }
+        assert q._debug_embeddings() == [
+            (1, b'\x00\x00\x80?\x00\x00\x00\x00\x00\x00\x00\x00'),
+            (2, b'\x00\x00\x80?\x00\x00\x00\x00\x00\x00\x00\x00'),
+        ]
+        assert q._debug_docs() == [
+            (1, None, 0, 'first doc', 1, None),
+            (2, 1, 1, 'second doc', 2, '{"a": "b"}'),
+            (3, 1, 1, 'third doc', None, None),
+        ]
+    db.close()
+
+    # Prev database; let's delete a document.
+    kb = KB(_DB_PATH)
+    await kb.del_doc(2)
+    await kb.close()
+
+    # Check the database:
+    db = _DB(_DB_PATH)
+    with db as q:
+        assert json.loads(q.get_key('embedding_func_params')) == {
+            'provider': 'mock',
+        }
+        assert q._debug_embeddings() == [
+            (1, b'\x00\x00\x80?\x00\x00\x00\x00\x00\x00\x00\x00'),
+        ]
+        assert q._debug_docs() == [
+            (1, None, 0, 'first doc', 1, None),
+            (3, 1, 1, 'third doc', None, None),
+        ]
+    db.close()

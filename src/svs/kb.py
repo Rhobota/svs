@@ -402,6 +402,27 @@ class KB:
             await self.loop.run_in_executor(None, heavy)
             self.db = None
 
+    async def _get_embedding_func(self) -> EmbeddingFunc:
+        if self.embedding_func is None:
+            async with self.db_lock:
+                # Loading the database will load the embedding func.
+                await self._ensure_db()
+                assert self.embedding_func
+        return self.embedding_func
+
+    async def _get_embeddings_as_bytes(
+        self,
+        list_of_strings: List[str],
+    ) -> List[bytes]:
+        func = await self._get_embedding_func()
+        list_of_list_of_floats = await func(list_of_strings)
+        def heavy() -> List[bytes]:
+            return [
+                embedding_to_bytes(embedding)
+                for embedding in list_of_list_of_floats
+            ]
+        return await self.loop.run_in_executor(None, heavy)
+
     async def add_doc(
         self,
         text: str,
@@ -411,28 +432,25 @@ class KB:
     ) -> DocumentId:
         embedding = None
         if not no_embedding:
-            embedding = (await self._get_embedding([text]))[0]
-        db = await self._ensure_db()
-        def heavy() -> DocumentId:
-            with db as q:
-                return q.add_doc(
-                    text,
-                    parent_id,
-                    meta,
-                    embedding,
-                )
+            embedding = (await self._get_embeddings_as_bytes([text]))[0]
         async with self.db_lock:
+            db = await self._ensure_db()
+            def heavy() -> DocumentId:
+                with db as q:
+                    return q.add_doc(
+                        text,
+                        parent_id,
+                        meta,
+                        embedding,
+                    )
             return await self.loop.run_in_executor(None, heavy)
 
-    async def bulk_add_docs(self) -> List[DocumentId]:
-        return []   # TODO
-
     async def del_doc(self, doc_id: DocumentId) -> None:
-        db = await self._ensure_db()
-        def heavy() -> None:
-            with db as q:
-                return q.del_doc(doc_id)
         async with self.db_lock:
+            db = await self._ensure_db()
+            def heavy() -> None:
+                with db as q:
+                    return q.del_doc(doc_id)
             return await self.loop.run_in_executor(None, heavy)
 
     async def retrieve(
