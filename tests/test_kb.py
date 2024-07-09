@@ -155,3 +155,4 @@ def test_doc_table():
             'embedding': [1.0],
             'meta': None,
         }
+    db.close()
