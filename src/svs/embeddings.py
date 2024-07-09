@@ -19,13 +19,34 @@ def embedding_from_bytes(embedding: bytes) -> List[float]:
 
 
 def make_embeddings_func(
-    factory_name: str,
-    factory_params: Dict[str, Any],
+    embedding_func_params: Dict[str, Any],
 ) -> EmbeddingFunc:
-    if factory_name == 'openai':
-        return make_openai_embeddings_func(**factory_params)
+    embedding_func_params = { **embedding_func_params }  # shallow copy
+    provider = embedding_func_params.pop('provider')
+    if provider == 'mock':
+        return make_mock_embeddings_func(**embedding_func_params)
+    elif provider == 'openai':
+        return make_openai_embeddings_func(**embedding_func_params)
     else:
-        raise ValueError(f"unknown facotry name: {factory_name}")
+        raise ValueError(f"unknown embedding provider name: {provider}")
+
+
+def make_mock_embeddings_func() -> EmbeddingFunc:
+    params = {
+        'provider': 'mock',
+    }
+
+    async def mock_embeddings(
+        list_of_strings: List[str],
+    ) -> List[List[float]]:
+        return [
+            [1.0, 0.0, 0.0]
+            for _ in list_of_strings
+        ]
+
+    setattr(mock_embeddings, '__embedding_func_params__', params)
+
+    return mock_embeddings
 
 
 def make_openai_embeddings_func(
@@ -36,6 +57,13 @@ def make_openai_embeddings_func(
 ) -> EmbeddingFunc:
     if api_key is None:
         api_key = os.environ['OPENAI_API_KEY']
+
+    params = {
+        'provider': 'openai',
+        'model': model,
+        'dimensions': dimensions,
+    }
+
     async def openai_embeddings(
         list_of_strings: List[str],
     ) -> List[List[float]]:
@@ -72,5 +100,7 @@ def make_openai_embeddings_func(
             for v in e:
                 assert isinstance(v, float)
         return embeddings
+
+    setattr(openai_embeddings, '__embedding_func_params__', params)
 
     return openai_embeddings
