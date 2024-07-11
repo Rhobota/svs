@@ -27,6 +27,9 @@ import logging
 _LOG = logging.getLogger(__name__)
 
 
+BULK_EMBEDDING_CHUNK_SIZE = 200
+
+
 assert sqlite3.threadsafety > 0, "sqlite3 was not compiled in thread-safe mode"  # see ref [1]
 
 
@@ -273,27 +276,29 @@ class _Querier:
         self,
         doc_id: DocumentId,
         embedding: Optional[bytes],
+        skip_check_old: bool = False,
     ) -> None:
-        res = self.conn.execute(
-            """
-            SELECT embedding
-            FROM docs
-            WHERE id = ?;
-            """,
-            (doc_id,),
-        )
-        row = res.fetchone()
-        if row is None:
-            raise KeyError(doc_id)
-        emb_id = row[0]
-        if emb_id is not None:
+        if not skip_check_old:
             res = self.conn.execute(
                 """
-                DELETE FROM embeddings WHERE id = ?;
+                SELECT embedding
+                FROM docs
+                WHERE id = ?;
                 """,
-                (emb_id,),
+                (doc_id,),
             )
-            assert res.rowcount == 1
+            row = res.fetchone()
+            if row is None:
+                raise KeyError(doc_id)
+            emb_id = row[0]
+            if emb_id is not None:
+                res = self.conn.execute(
+                    """
+                    DELETE FROM embeddings WHERE id = ?;
+                    """,
+                    (emb_id,),
+                )
+                assert res.rowcount == 1
         emb_id = None
         if embedding is not None:
             res = self.conn.execute(
@@ -566,13 +571,13 @@ class KB:
                     yield add_doc
                 finally:
                     pass  # any cleanup here
-                for chunk in chunkify(needs_embeddings, 100):
+                for chunk in chunkify(needs_embeddings, BULK_EMBEDDING_CHUNK_SIZE):
                     doc_ids = [c[0] for c in chunk]
                     texts = [c[1] for c in chunk]
                     embeddings = await self._get_embeddings_as_bytes(texts)
                     def heavy() -> None:
                         for doc_id, embedding in zip(doc_ids, embeddings):
-                            q.set_doc_embedding(doc_id, embedding)
+                            q.set_doc_embedding(doc_id, embedding, skip_check_old=True)
                     await self.loop.run_in_executor(None, heavy)
 
     async def del_doc(self, doc_id: DocumentId) -> None:
