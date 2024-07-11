@@ -1,6 +1,6 @@
 from typing import (
     Callable, Awaitable, List, TypedDict, Optional,
-    Dict, Any,
+    Dict, Any, Protocol,
 )
 
 
@@ -17,3 +17,13 @@ class DocumentRecord(TypedDict):
     text: str
     embedding: Optional[List[float]]
     meta: Optional[Dict[str, Any]]
+
+
+class DocumentAdder(Protocol):
+    async def __call__(
+        self,
+        text: str,
+        parent_id: Optional[DocumentId] = None,
+        meta: Optional[Dict[str, Any]] = None,
+        no_embedding: bool = False,
+    ) -> DocumentId: ...
