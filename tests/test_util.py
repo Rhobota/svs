@@ -10,6 +10,7 @@ from svs.util import (
     cached,
     file_cached_wget,
     get_top_k,
+    chunkify,
 )
 
 
@@ -322,3 +323,40 @@ def test_get_top_k():
     s, i = top[2]
     assert s == 0.2
     assert i == 1
+
+
+def test_chunkify():
+    with pytest.raises(ValueError):
+        assert chunkify([], -1) == []
+    with pytest.raises(ValueError):
+        assert chunkify([], 0) == []
+
+    assert chunkify([], 1) == []
+    assert chunkify([], 2) == []
+    assert chunkify([], 3) == []
+
+    assert chunkify([5], 1) == [[5]]
+    assert chunkify([5], 2) == [[5]]
+    assert chunkify([5], 3) == [[5]]
+
+    assert chunkify([5, 7], 1) == [[5], [7]]
+    assert chunkify([5, 7], 2) == [[5, 7]]
+    assert chunkify([5, 7], 3) == [[5, 7]]
+
+    assert chunkify([5, 7, 9], 1) == [[5], [7], [9]]
+    assert chunkify([5, 7, 9], 2) == [[5, 7], [9]]
+    assert chunkify([5, 7, 9], 3) == [[5, 7, 9]]
+    assert chunkify([5, 7, 9], 4) == [[5, 7, 9]]
+
+    assert chunkify([5, 7, 9, 3], 1) == [[5], [7], [9], [3]]
+    assert chunkify([5, 7, 9, 3], 2) == [[5, 7], [9, 3]]
+    assert chunkify([5, 7, 9, 3], 3) == [[5, 7, 9], [3]]
+    assert chunkify([5, 7, 9, 3], 4) == [[5, 7, 9, 3]]
+    assert chunkify([5, 7, 9, 3], 5) == [[5, 7, 9, 3]]
+
+    assert chunkify([5, 7, 9, 3, 4], 1) == [[5], [7], [9], [3], [4]]
+    assert chunkify([5, 7, 9, 3, 4], 2) == [[5, 7], [9, 3], [4]]
+    assert chunkify([5, 7, 9, 3, 4], 3) == [[5, 7, 9], [3, 4]]
+    assert chunkify([5, 7, 9, 3, 4], 4) == [[5, 7, 9, 3], [4]]
+    assert chunkify([5, 7, 9, 3, 4], 5) == [[5, 7, 9, 3, 4]]
+    assert chunkify([5, 7, 9, 3, 4], 6) == [[5, 7, 9, 3, 4]]
