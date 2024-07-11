@@ -252,8 +252,13 @@ def test_doc_table():
     # **Re-open** the database
     db = _DB(_DB_PATH)
     with db as q:
-        q.del_doc(2)
+        with pytest.raises(RuntimeError):
+            # This is a parent, so we can't delete it until we delete its children.
+            q.del_doc(2)
+
+        q.del_doc(5)
         q.del_doc(4)
+        q.del_doc(2)
 
         with pytest.raises(KeyError):
             q.del_doc(88)
@@ -266,7 +271,29 @@ def test_doc_table():
         assert q._debug_docs() == [
             (1, None, 0, 'first doc', 1, None),
             (3, None, 0, 'third doc', 3, '{"test": "stuff"}'),
-            (5, 4, 3, 'fifth doc', None, '{"test": 5}'),
+        ]
+
+    db.close()
+
+    # **Re-open** the database
+    db = _DB(_DB_PATH)
+    with db as q:
+        q.set_doc_embedding(1, None)
+        assert q._debug_embeddings() == [
+            (3, b'\x00\x00\x00@'),
+        ]
+        assert q._debug_docs() == [
+            (1, None, 0, 'first doc', None, None),
+            (3, None, 0, 'third doc', 3, '{"test": "stuff"}'),
+        ]
+
+        q.set_doc_embedding(3, b'\x07')
+        assert q._debug_embeddings() == [
+            (1, b'\x07'),
+        ]
+        assert q._debug_docs() == [
+            (1, None, 0, 'first doc', None, None),
+            (3, None, 0, 'third doc', 1, '{"test": "stuff"}'),
         ]
 
     db.close()
@@ -417,5 +444,30 @@ async def test_kb_add_del_doc():
         assert q._debug_docs() == [
             (1, None, 0, 'first doc', 1, None),
             (3, 1, 1, 'third doc', None, None),
+        ]
+    db.close()
+
+    # Prev database; bulk add documents:
+    kb = KB(_DB_PATH)
+    async with kb.bulk_add_docs() as add_doc:
+        assert (await add_doc("forth doc", 1, meta={'new': 'stuff'})) == 4
+        assert (await add_doc("fifth doc", 3, no_embedding=True)) == 5
+    await kb.close()
+
+    # Check the database:
+    db = _DB(_DB_PATH)
+    with db as q:
+        assert json.loads(q.get_key('embedding_func_params')) == {
+            'provider': 'mock',
+        }
+        assert q._debug_embeddings() == [
+            (1, b'\x00\x00\x80?\x00\x00\x00\x00\x00\x00\x00\x00'),
+            (2, b'\x00\x00\x80?\x00\x00\x00\x00\x00\x00\x00\x00'),
+        ]
+        assert q._debug_docs() == [
+            (1, None, 0, 'first doc', 1, None),
+            (3, 1, 1, 'third doc', None, None),
+            (4, 1, 1, 'forth doc', 2, '{"new": "stuff"}'),
+            (5, 3, 2, 'fifth doc', None, None),
         ]
     db.close()

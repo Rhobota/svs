@@ -1,12 +1,13 @@
 import asyncio
+from contextlib import asynccontextmanager
 import sqlite3
 import json
 from datetime import datetime, timezone
 
 from types import TracebackType
 from typing import (
-    List, Tuple, Dict, Any, Literal,
-    Optional, Union, Type, cast,
+    AsyncIterator, List, Tuple, Dict, Any, Literal,
+    Optional, Union, Type,
 )
 
 import numpy as np
@@ -17,7 +18,9 @@ from .embeddings import (
     make_embeddings_func,
 )
 
-from .types import DocumentId, DocumentRecord, EmbeddingFunc
+from .types import DocumentAdder, DocumentId, DocumentRecord, EmbeddingFunc
+
+from .util import chunkify
 
 import logging
 
@@ -25,9 +28,6 @@ _LOG = logging.getLogger(__name__)
 
 
 assert sqlite3.threadsafety > 0, "sqlite3 was not compiled in thread-safe mode"  # see ref [1]
-
-
-# TODO: bulk add docs, bulk delete docs
 
 
 _SCHEMA_VERSION = 1   # !!! IF YOU CHANGE THE SCHEMA, BUMP THIS VERSION AND WRITE A MIGRATION FUNCTION !!!
@@ -186,6 +186,16 @@ class _Querier:
         return res.lastrowid
 
     def del_doc(self, doc_id: DocumentId) -> None:
+        parent_res = self.conn.execute(
+            """
+            SELECT id
+            FROM docs
+            WHERE parent_id = ?;
+            """,
+            (doc_id,),
+        )
+        if parent_res.fetchone() is not None:
+            raise RuntimeError("You cannot delete a document that is a parent.")
         res = self.conn.execute(
             """
             SELECT embedding
@@ -259,6 +269,51 @@ class _Querier:
             'meta': meta,
         }
 
+    def set_doc_embedding(
+        self,
+        doc_id: DocumentId,
+        embedding: Optional[bytes],
+    ) -> None:
+        res = self.conn.execute(
+            """
+            SELECT embedding
+            FROM docs
+            WHERE id = ?;
+            """,
+            (doc_id,),
+        )
+        row = res.fetchone()
+        if row is None:
+            raise KeyError(doc_id)
+        emb_id = row[0]
+        if emb_id is not None:
+            res = self.conn.execute(
+                """
+                DELETE FROM embeddings WHERE id = ?;
+                """,
+                (emb_id,),
+            )
+            assert res.rowcount == 1
+        emb_id = None
+        if embedding is not None:
+            res = self.conn.execute(
+                """
+                INSERT INTO embeddings (embedding)
+                VALUES (?);
+                """,
+                (embedding,),
+            )
+            assert res.lastrowid is not None
+            emb_id = res.lastrowid
+        res = self.conn.execute(
+            """
+            UPDATE docs SET embedding = ? WHERE id = ?;
+            """,
+            (emb_id, doc_id),
+        )
+        if res.rowcount != 1:
+            raise KeyError(doc_id)
+
     def _debug_keyval(self) -> Dict[str, Any]:
         res = self.conn.execute(
             """
@@ -322,6 +377,9 @@ class _DB:
         self.in_transaction = True
         return _Querier(self.conn)
 
+    async def __aenter__(self) -> _Querier:
+        return await asyncio.get_running_loop().run_in_executor(None, self.__enter__)
+
     def __exit__(
         self,
         exc_type: Optional[Type[BaseException]],
@@ -340,6 +398,14 @@ class _DB:
             self.conn.commit()
             self.in_transaction = False
             return None
+
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> Union[Literal[False], None]:
+        return await asyncio.get_running_loop().run_in_executor(None, self.__exit__, exc_type, exc_val, exc_tb)
 
     def vacuum(self) -> None:
         assert self.conn is not None
@@ -404,7 +470,10 @@ class KB:
                         with db as q:
                             q.set_key('embedding_func_params', json.dumps(init_eparams))
                     else:
-                        raise RuntimeError("No embedding function. You did not passed one to constructor and there is not one in the database. You must pass the embedding function you want to use to the constructor on the *first* usage of a new database; it will be stored in the database for later use.")
+                        if self.embedding_func is not None:
+                            _LOG.warning("Cannot store this non-standard embeddings function to the database. That's okay, but you'll have to explicitly pass this function to all future instantiations of this database.")
+                        else:
+                            raise RuntimeError("No embedding function. You did not passed one to constructor and there is not one in the database. You must pass the embedding function you want to use to the constructor on the *first* usage of a new database; it will be stored in the database for later use.")
                     return db
                 except:
                     db.close()
@@ -466,12 +535,61 @@ class KB:
                     )
             return await self.loop.run_in_executor(None, heavy)
 
+    @asynccontextmanager
+    async def bulk_add_docs(
+        self,
+    ) -> AsyncIterator[DocumentAdder]:
+        async with self.db_lock:
+            db = await self._ensure_db()
+            async with db as q:
+                lock = asyncio.Lock()
+                needs_embeddings: List[Tuple[DocumentId, str]] = []
+                async def add_doc(
+                    text: str,
+                    parent_id: Optional[DocumentId] = None,
+                    meta: Optional[Dict[str, Any]] = None,
+                    no_embedding: bool = False,
+                ) -> DocumentId:
+                    async with lock:
+                        def heavy() -> DocumentId:
+                            return q.add_doc(
+                                text,
+                                parent_id,
+                                meta,
+                                embedding = None,
+                            )
+                        doc_id = await self.loop.run_in_executor(None, heavy)
+                        if not no_embedding:
+                            needs_embeddings.append((doc_id, text))
+                        return doc_id
+                try:
+                    yield add_doc
+                finally:
+                    pass  # any cleanup here
+                for chunk in chunkify(needs_embeddings, 100):
+                    doc_ids = [c[0] for c in chunk]
+                    texts = [c[1] for c in chunk]
+                    embeddings = await self._get_embeddings_as_bytes(texts)
+                    def heavy() -> None:
+                        for doc_id, embedding in zip(doc_ids, embeddings):
+                            q.set_doc_embedding(doc_id, embedding)
+                    await self.loop.run_in_executor(None, heavy)
+
     async def del_doc(self, doc_id: DocumentId) -> None:
         async with self.db_lock:
             db = await self._ensure_db()
             def heavy() -> None:
                 with db as q:
                     return q.del_doc(doc_id)
+            return await self.loop.run_in_executor(None, heavy)
+
+    async def del_docs(self, doc_ids: List[DocumentId]) -> None:
+        async with self.db_lock:
+            db = await self._ensure_db()
+            def heavy() -> None:
+                with db as q:
+                    for doc_id in doc_ids:
+                        q.del_doc(doc_id)
             return await self.loop.run_in_executor(None, heavy)
 
     async def retrieve(
