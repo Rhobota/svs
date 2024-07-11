@@ -3,6 +3,8 @@ import pytest
 import os
 import json
 
+from typing import List
+
 from svs.embeddings import (
     make_mock_embeddings_func,
     make_openai_embeddings_func,
@@ -471,3 +473,49 @@ async def test_kb_add_del_doc():
             (5, 3, 2, 'fifth doc', None, None),
         ]
     db.close()
+
+
+@pytest.mark.asyncio
+async def test_kb_retrieve():
+    async def embedding_func(list_of_texts: List[str]) -> List[List[float]]:
+        ret: List[List[float]] = []
+        for text in list_of_texts:
+            if 'first' in text:
+                ret.append([1.0, 0.001, 0.0])
+            elif 'second' in text:
+                ret.append([0.0, 1.0, 0.0001])
+            elif 'third' in text:
+                ret.append([0.01, 0.0, 1.0])
+            else:
+                raise ValueError("unexpected doc")
+        return ret
+
+    # New database!
+    kb = KB(_DB_PATH, embedding_func)
+    assert (await kb.add_doc("third doc")) == 1
+    assert (await kb.add_doc("first doc")) == 2
+    assert (await kb.add_doc("second doc")) == 3
+    await kb.close()
+
+    # Retrieve!
+    kb = KB(_DB_PATH, embedding_func)
+
+    docs = await kb.retrieve('... first ...', n=3)
+    assert len(docs) == 3
+    assert docs[0]['text'] == 'first doc'
+    assert docs[1]['text'] == 'third doc'
+    assert docs[2]['text'] == 'second doc'
+
+    docs = await kb.retrieve('... second ...', n=3)
+    assert len(docs) == 3
+    assert docs[0]['text'] == 'second doc'
+    assert docs[1]['text'] == 'first doc'
+    assert docs[2]['text'] == 'third doc'
+
+    docs = await kb.retrieve('... third ...', n=3)
+    assert len(docs) == 3
+    assert docs[0]['text'] == 'third doc'
+    assert docs[1]['text'] == 'first doc'
+    assert docs[2]['text'] == 'second doc'
+
+    await kb.close()

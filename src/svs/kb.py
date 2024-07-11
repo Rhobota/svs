@@ -20,14 +20,17 @@ from .embeddings import (
 
 from .types import DocumentAdder, DocumentId, DocumentRecord, EmbeddingFunc
 
-from .util import chunkify
+from .util import chunkify, get_top_k
 
 import logging
 
 _LOG = logging.getLogger(__name__)
 
 
-BULK_EMBEDDING_CHUNK_SIZE = 200
+# TODO assert that all doc vectors have magnitude 1.0
+
+
+_BULK_EMBEDDING_CHUNK_SIZE = 200
 
 
 assert sqlite3.threadsafety > 0, "sqlite3 was not compiled in thread-safe mode"  # see ref [1]
@@ -272,6 +275,20 @@ class _Querier:
             'meta': meta,
         }
 
+    def fetch_doc_with_emb_id(self, emb_id: int) -> DocumentRecord:
+        res = self.conn.execute(
+            """
+            SELECT id
+            FROM docs
+            WHERE embedding = ?;
+            """,
+            (emb_id,),
+        )
+        row = res.fetchone()
+        if row is None:
+            raise KeyError(emb_id)
+        return self.fetch_doc(row[0])
+
     def set_doc_embedding(
         self,
         doc_id: DocumentId,
@@ -318,6 +335,52 @@ class _Querier:
         )
         if res.rowcount != 1:
             raise KeyError(doc_id)
+
+    def build_embeddings_matrix(self) -> Tuple[np.ndarray, np.ndarray]:
+        res = self.conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM embeddings;
+            """,
+            (),
+        )
+        row = res.fetchone()
+        assert row is not None
+        n = row[0]
+        if not (n > 0):
+            raise RuntimeError("no embeddings in database!")
+
+        res = self.conn.execute(
+            """
+            SELECT embedding
+            FROM embeddings
+            LIMIT 1;
+            """,
+            (),
+        )
+        row = res.fetchone()
+        assert row is not None
+        m = len(embedding_from_bytes(row[0]))
+
+        embeddings_matrix = np.zeros((n, m), dtype=np.float32)
+        emb_id_lookup = np.zeros(n, dtype=np.int64)
+
+        res = self.conn.execute(
+            """
+            SELECT id, embedding
+            FROM embeddings;
+            """,
+            (),
+        )
+        i = 0
+        for i, row in enumerate(res):
+            embedding_here = embedding_from_bytes(row[1])
+            assert len(embedding_here) == m
+            embeddings_matrix[i] = embedding_here
+            emb_id_lookup[i] = row[0]
+        assert i == n-1
+
+        return embeddings_matrix, emb_id_lookup
 
     def _debug_keyval(self) -> Dict[str, Any]:
         res = self.conn.execute(
@@ -437,6 +500,29 @@ class _DB:
             raise RuntimeError('unreachable')
 
 
+class _EmbeddingsMatrix:
+    def __init__(self) -> None:
+        self.embeddings_matrix: Union[np.ndarray, None] = None
+        self.emb_id_lookup: Union[np.ndarray, None] = None
+
+    def invalidate(self) -> None:
+        self.embeddings_matrix = None
+        self.emb_id_lookup = None
+
+    async def get(self, db: _DB) -> Tuple[np.ndarray, np.ndarray]:
+        if self.embeddings_matrix is not None and self.emb_id_lookup is not None:
+            return self.embeddings_matrix, self.emb_id_lookup
+        else:
+            def heavy() -> Tuple[np.ndarray, np.ndarray]:
+                with db as q:
+                    return q.build_embeddings_matrix()
+            loop = asyncio.get_running_loop()
+            embeddings_matrix, emb_id_lookup = await loop.run_in_executor(None, heavy)
+            self.embeddings_matrix = embeddings_matrix
+            self.emb_id_lookup = emb_id_lookup
+            return embeddings_matrix, emb_id_lookup
+
+
 class KB:
     """Stupid simple knowledge base."""
 
@@ -450,6 +536,7 @@ class KB:
         self.db: Union[_DB, None] = None
         self.db_lock = asyncio.Lock()
         self.embedding_func = embedding_func
+        self.embeddings_matrix = _EmbeddingsMatrix()
 
     async def _ensure_db(self) -> _DB:
         if self.db is None:
@@ -496,6 +583,7 @@ class KB:
                 db.close()
             await self.loop.run_in_executor(None, heavy)
             self.db = None
+            self.embeddings_matrix.invalidate()
 
     async def _get_embedding_func(self) -> EmbeddingFunc:
         if self.embedding_func is None:
@@ -538,7 +626,9 @@ class KB:
                         meta,
                         embedding,
                     )
-            return await self.loop.run_in_executor(None, heavy)
+            doc_id = await self.loop.run_in_executor(None, heavy)
+            self.embeddings_matrix.invalidate()
+            return doc_id
 
     @asynccontextmanager
     async def bulk_add_docs(
@@ -571,7 +661,7 @@ class KB:
                     yield add_doc
                 finally:
                     pass  # any cleanup here
-                for chunk in chunkify(needs_embeddings, BULK_EMBEDDING_CHUNK_SIZE):
+                for chunk in chunkify(needs_embeddings, _BULK_EMBEDDING_CHUNK_SIZE):
                     doc_ids = [c[0] for c in chunk]
                     texts = [c[1] for c in chunk]
                     embeddings = await self._get_embeddings_as_bytes(texts)
@@ -579,6 +669,7 @@ class KB:
                         for doc_id, embedding in zip(doc_ids, embeddings):
                             q.set_doc_embedding(doc_id, embedding, skip_check_old=True)
                     await self.loop.run_in_executor(None, heavy)
+                self.embeddings_matrix.invalidate()
 
     async def del_doc(self, doc_id: DocumentId) -> None:
         async with self.db_lock:
@@ -586,7 +677,8 @@ class KB:
             def heavy() -> None:
                 with db as q:
                     return q.del_doc(doc_id)
-            return await self.loop.run_in_executor(None, heavy)
+            await self.loop.run_in_executor(None, heavy)
+            self.embeddings_matrix.invalidate()
 
     async def del_docs(self, doc_ids: List[DocumentId]) -> None:
         async with self.db_lock:
@@ -595,11 +687,29 @@ class KB:
                 with db as q:
                     for doc_id in doc_ids:
                         q.del_doc(doc_id)
-            return await self.loop.run_in_executor(None, heavy)
+            await self.loop.run_in_executor(None, heavy)
+            self.embeddings_matrix.invalidate()
 
     async def retrieve(
         self,
         query: str,
         n: int,
     ) -> List[DocumentRecord]:
-        return []   # TODO
+        async with self.db_lock:
+            db = await self._ensure_db()
+            embeddings_matrix, emb_id_lookup = await self.embeddings_matrix.get(db)
+        func = await self._get_embedding_func()
+        query_vec = np.array((await func([query]))[0], dtype=np.float32)
+        def superheavy() -> List[int]:
+            x = np.dot(embeddings_matrix, query_vec)
+            emb_ids = []
+            for _, i in get_top_k(x, n):
+                emb_ids.append(int(emb_id_lookup[i]))
+            return emb_ids
+        emb_ids = await self.loop.run_in_executor(None, superheavy)
+        async with self.db_lock:
+            db = await self._ensure_db()
+            async with db as q:
+                def heavy() -> List[DocumentRecord]:
+                    return [q.fetch_doc_with_emb_id(emb_id) for emb_id in emb_ids]
+            return await self.loop.run_in_executor(None, heavy)
