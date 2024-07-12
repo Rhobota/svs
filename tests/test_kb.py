@@ -205,7 +205,7 @@ def test_doc_table():
     # **Re-open** the database
     db = _DB(_DB_PATH)
     with db as q:
-        assert q.fetch_doc(1) == {
+        assert q.fetch_doc(1, include_embedding=True) == {
             'id': 1,
             'parent_id': None,
             'level': 0,
@@ -213,7 +213,7 @@ def test_doc_table():
             'embedding': [1.0],
             'meta': None,
         }
-        assert q.fetch_doc(2) == {
+        assert q.fetch_doc(2, include_embedding=True) == {
             'id': 2,
             'parent_id': 1,
             'level': 1,
@@ -221,7 +221,7 @@ def test_doc_table():
             'embedding': [2.0, 3.5],
             'meta': None,
         }
-        assert q.fetch_doc(3) == {
+        assert q.fetch_doc(3, include_embedding=True) == {
             'id': 3,
             'parent_id': None,
             'level': 0,
@@ -229,7 +229,7 @@ def test_doc_table():
             'embedding': [2.0],
             'meta': {'test': 'stuff'},
         }
-        assert q.fetch_doc(4) == {
+        assert q.fetch_doc(4, include_embedding=True) == {
             'id': 4,
             'parent_id': 2,
             'level': 2,
@@ -237,7 +237,7 @@ def test_doc_table():
             'embedding': [3.5],
             'meta': {'test': 'again'},
         }
-        assert q.fetch_doc(5) == {
+        assert q.fetch_doc(5, include_embedding=True) == {
             'id': 5,
             'parent_id': 4,
             'level': 3,
@@ -245,9 +245,25 @@ def test_doc_table():
             'embedding': None,
             'meta': {'test': 5},
         }
+        assert q.fetch_doc(4, include_embedding=False) == {
+            'id': 4,
+            'parent_id': 2,
+            'level': 2,
+            'text': 'forth doc',
+            'embedding': True,
+            'meta': {'test': 'again'},
+        }
+        assert q.fetch_doc(5, include_embedding=False) == {
+            'id': 5,
+            'parent_id': 4,
+            'level': 3,
+            'text': 'fifth doc',
+            'embedding': False,
+            'meta': {'test': 5},
+        }
 
         with pytest.raises(KeyError):
-            q.fetch_doc(88)
+            q.fetch_doc(88, include_embedding=True)
 
     db.close()
 
@@ -534,21 +550,21 @@ async def test_kb_retrieve():
 
     docs = await kb.retrieve('... first ...', n=3)
     assert len(docs) == 3
-    assert docs[0]['text'] == 'first doc'
-    assert docs[1]['text'] == 'third doc'
-    assert docs[2]['text'] == 'second doc'
+    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'first doc'
+    assert docs[1]['doc'] and docs[1]['doc']['text'] == 'third doc'
+    assert docs[2]['doc'] and docs[2]['doc']['text'] == 'second doc'
 
     docs = await kb.retrieve('... second ...', n=3)
     assert len(docs) == 3
-    assert docs[0]['text'] == 'second doc'
-    assert docs[1]['text'] == 'first doc'
-    assert docs[2]['text'] == 'third doc'
+    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'second doc'
+    assert docs[1]['doc'] and docs[1]['doc']['text'] == 'first doc'
+    assert docs[2]['doc'] and docs[2]['doc']['text'] == 'third doc'
 
     docs = await kb.retrieve('... third ...', n=3)
     assert len(docs) == 3
-    assert docs[0]['text'] == 'third doc'
-    assert docs[1]['text'] == 'first doc'
-    assert docs[2]['text'] == 'second doc'
+    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'third doc'
+    assert docs[1]['doc'] and docs[1]['doc']['text'] == 'first doc'
+    assert docs[2]['doc'] and docs[2]['doc']['text'] == 'second doc'
 
     await kb.close()
 
@@ -561,7 +577,7 @@ async def test_kb_retrieve():
 
     docs = await kb.retrieve('... forth ...', n=1)
     assert len(docs) == 1
-    assert docs[0]['text'] == 'forth doc'
+    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'forth doc'
 
     await kb.close()
 
@@ -576,6 +592,6 @@ async def test_kb_retrieve():
 
     docs = await kb.retrieve('... forth ...', n=1)
     assert len(docs) == 1
-    assert docs[0]['text'] == 'second doc'
+    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'second doc'
 
     await kb.close()

@@ -19,9 +19,9 @@ from .embeddings import (
 )
 
 from .types import (
-    DocumentAdder, DocumentDeleter,
+    DocumentAdder, DocumentDeleter, DocumentQuerier,
     DocumentId, DocumentRecord,
-    EmbeddingFunc,
+    EmbeddingFunc, Retrieval,
 )
 
 from .util import chunkify, get_top_k
@@ -243,7 +243,11 @@ class _Querier:
         )
         assert res.rowcount == 1
 
-    def fetch_doc(self, doc_id: DocumentId) -> DocumentRecord:
+    def fetch_doc(
+        self,
+        doc_id: DocumentId,
+        include_embedding: bool,
+    ) -> DocumentRecord:
         doc_res = self.conn.execute(
             """
             SELECT
@@ -261,34 +265,80 @@ class _Querier:
         doc_row = doc_res.fetchone()
         if doc_row is None:
             raise KeyError(doc_id)
-        emb_id = doc_row[4]
-        embedding = None
-        if emb_id is not None:
-            emb_res = self.conn.execute(
-                """
-                SELECT embedding
-                FROM embeddings
-                WHERE id = ?;
-                """,
-                (emb_id,),
-            )
-            emb_row = emb_res.fetchone()
-            if emb_row is None:
-                raise ValueError(f"invalid embedding id: {emb_id}")
-            embedding = embedding_from_bytes(emb_row[0])
         meta = None
         if doc_row[5] is not None:
             meta = json.loads(doc_row[5])
-        return {
-            'id': doc_row[0],
-            'parent_id': doc_row[1],
-            'level': doc_row[2],
-            'text': doc_row[3],
-            'embedding': embedding,
-            'meta': meta,
-        }
+        emb_id = doc_row[4]
+        if include_embedding:
+            embedding = None
+            if emb_id is not None:
+                emb_res = self.conn.execute(
+                    """
+                    SELECT embedding
+                    FROM embeddings
+                    WHERE id = ?;
+                    """,
+                    (emb_id,),
+                )
+                emb_row = emb_res.fetchone()
+                if emb_row is None:
+                    raise ValueError(f"invalid embedding id: {emb_id}")
+                embedding = embedding_from_bytes(emb_row[0])
+            return {
+                'id': doc_row[0],
+                'parent_id': doc_row[1],
+                'level': doc_row[2],
+                'text': doc_row[3],
+                'embedding': embedding,
+                'meta': meta,
+            }
+        else:
+            return {
+                'id': doc_row[0],
+                'parent_id': doc_row[1],
+                'level': doc_row[2],
+                'text': doc_row[3],
+                'embedding': emb_id is not None,
+                'meta': meta,
+            }
 
-    def fetch_doc_with_emb_id(self, emb_id: int) -> DocumentRecord:
+    def fetch_doc_children(
+        self,
+        doc_id: DocumentId,
+        include_embedding: bool,
+    ) -> List[DocumentRecord]:
+        res = self.conn.execute(
+            """
+            SELECT id
+            FROM docs
+            WHERE parent_id = ?;
+            """,
+            (doc_id,),
+        )
+        return [
+            self.fetch_doc(row[0], include_embedding)
+            for row in res
+        ]
+
+    def fetch_docs_at_level(
+        self,
+        level: int,
+        include_embedding: bool,
+    ) -> List[DocumentRecord]:
+        res = self.conn.execute(
+            """
+            SELECT id
+            FROM docs
+            WHERE level = ?;
+            """,
+            (level,),
+        )
+        return [
+            self.fetch_doc(row[0], include_embedding)
+            for row in res
+        ]
+
+    def fetch_doc_with_emb_id(self, emb_id: int) -> DocumentId:
         res = self.conn.execute(
             """
             SELECT id
@@ -300,7 +350,8 @@ class _Querier:
         row = res.fetchone()
         if row is None:
             raise KeyError(emb_id)
-        return self.fetch_doc(row[0])
+        doc_id: DocumentId = row[0]
+        return doc_id
 
     def set_doc_embedding(
         self,
@@ -689,27 +740,101 @@ class KB:
                     in_context_manager = False
                 self.embeddings_matrix.invalidate()
 
+    @asynccontextmanager
+    async def bulk_query_docs(
+        self,
+    ) -> AsyncIterator[DocumentQuerier]:
+        loop = asyncio.get_running_loop()
+        async with self.db_lock:
+            db = await self._ensure_db()
+            async with db as q:
+                in_context_manager = True
+                lock = asyncio.Lock()
+                class Querier(DocumentQuerier):
+                    async def query_doc(
+                        self,
+                        doc_id: DocumentId,
+                        include_embedding: bool = False,
+                    ) -> DocumentRecord:
+                        assert in_context_manager, "You may not call this function outside of the context manager!"
+                        async with lock:
+                            def heavy() -> DocumentRecord:
+                                return q.fetch_doc(doc_id, include_embedding)
+                            return await loop.run_in_executor(None, heavy)
+
+                    async def query_children(
+                        self,
+                        doc_id: DocumentId,
+                        include_embedding: bool = False,
+                    ) -> List[DocumentRecord]:
+                        assert in_context_manager, "You may not call this function outside of the context manager!"
+                        async with lock:
+                            def heavy() -> List[DocumentRecord]:
+                                return q.fetch_doc_children(doc_id, include_embedding)
+                            return await loop.run_in_executor(None, heavy)
+
+                    async def query_level(
+                        self,
+                        level: int,
+                        include_embedding: bool = False,
+                    ) -> List[DocumentRecord]:
+                        assert in_context_manager, "You may not call this function outside of the context manager!"
+                        async with lock:
+                            def heavy() -> List[DocumentRecord]:
+                                return q.fetch_docs_at_level(level, include_embedding)
+                            return await loop.run_in_executor(None, heavy)
+
+                    async def dfs_traversal(
+                        self,
+                        include_embedding: bool = False,
+                    ) -> AsyncIterator[DocumentRecord]:
+                        async def visit(doc: DocumentRecord) -> AsyncIterator[DocumentRecord]:
+                            yield doc
+                            children = await self.query_children(doc['id'], include_embedding)
+                            for child in children:
+                                async for subchild in visit(child):
+                                    yield subchild
+                        level_0 = await self.query_level(0, include_embedding)
+                        for level_0_doc in level_0:
+                            async for subdoc in visit(level_0_doc):
+                                yield subdoc
+
+                try:
+                    yield Querier()
+                finally:
+                    in_context_manager = False
+
     async def retrieve(
         self,
         query: str,
         n: int,
-    ) -> List[DocumentRecord]:
+        include_documents: bool = True,
+    ) -> List[Retrieval]:
         loop = asyncio.get_running_loop()
         async with self.db_lock:
             db = await self._ensure_db()
             embeddings_matrix, emb_id_lookup = await self.embeddings_matrix.get(db)
         func = await self._get_embedding_func()
         query_vec = np.array((await func([query]))[0], dtype=np.float32)
-        def superheavy() -> List[int]:
-            x = np.dot(embeddings_matrix, query_vec)
+        def superheavy() -> List[Tuple[float, int]]:
+            x = np.dot(embeddings_matrix, query_vec)  # numpy go brrr
             emb_ids = []
-            for _, i in get_top_k(x, n):
-                emb_ids.append(int(emb_id_lookup[i]))
+            for score, index in get_top_k(x, n):
+                emb_ids.append((score, int(emb_id_lookup[index])))
             return emb_ids
         emb_ids = await loop.run_in_executor(None, superheavy)
         async with self.db_lock:
             db = await self._ensure_db()
             async with db as q:
-                def heavy() -> List[DocumentRecord]:
-                    return [q.fetch_doc_with_emb_id(emb_id) for emb_id in emb_ids]
+                def heavy() -> List[Retrieval]:
+                    res: List[Retrieval] = []
+                    for score, emb_id in emb_ids:
+                        doc_id = q.fetch_doc_with_emb_id(emb_id)
+                        doc = q.fetch_doc(doc_id, include_embedding=False) if include_documents else None
+                        res.append({
+                            'score': score,
+                            'doc_id': doc_id,
+                            'doc': doc,
+                        })
+                    return res
             return await loop.run_in_executor(None, heavy)
