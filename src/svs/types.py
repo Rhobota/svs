@@ -1,7 +1,10 @@
 from typing import (
-    Callable, Awaitable, List, TypedDict, Optional,
-    Dict, Any, Protocol,
+    Any, Awaitable, Callable, Dict, List,
+    Optional, Protocol, TypedDict, Union,
+    AsyncIterator,
 )
+
+import abc
 
 
 EmbeddingFunc = Callable[[List[str]], Awaitable[List[List[float]]]]
@@ -15,8 +18,14 @@ class DocumentRecord(TypedDict):
     parent_id: Optional[DocumentId]
     level: int
     text: str
-    embedding: Optional[List[float]]
+    embedding: Union[List[float], None, bool]
     meta: Optional[Dict[str, Any]]
+
+
+class Retrieval(TypedDict):
+    score: float
+    doc_id: DocumentId
+    doc: Optional[DocumentRecord]
 
 
 class DocumentAdder(Protocol):
@@ -31,3 +40,32 @@ class DocumentAdder(Protocol):
 
 class DocumentDeleter(Protocol):
     async def __call__(self, doc_id: DocumentId) -> None: ...
+
+
+class DocumentQuerier(abc.ABC):
+    @abc.abstractmethod
+    async def query_doc(
+        self,
+        doc_id: DocumentId,
+        include_embedding: bool = False,
+    ) -> DocumentRecord: ...
+
+    @abc.abstractmethod
+    async def query_children(
+        self,
+        doc_id: DocumentId,
+        include_embedding: bool = False,
+    ) -> List[DocumentRecord]: ...
+
+    @abc.abstractmethod
+    async def query_level(
+        self,
+        level: int,
+        include_embedding: bool = False,
+    ) -> List[DocumentRecord]: ...
+
+    @abc.abstractmethod
+    def dfs_traversal(
+        self,
+        include_embedding: bool = False,
+    ) -> AsyncIterator[DocumentRecord]: ...

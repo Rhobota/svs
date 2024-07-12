@@ -147,7 +147,7 @@ def get_top_k(scores: np.ndarray, top_k: int) -> List[Tuple[float, int]]:
     if top_k <= 0:
         return []
     indices = np.argpartition(scores, -top_k)[-top_k:]
-    return sorted([(float(scores[i]), i) for i in indices], reverse=True)
+    return sorted([(float(scores[i]), int(i)) for i in indices], reverse=True)
 
 
 def chunkify(seq: List[T], n: int) -> List[List[T]]:
