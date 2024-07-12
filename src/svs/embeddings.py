@@ -1,6 +1,9 @@
 import aiohttp
 import os
 import struct
+import functools
+
+import numpy as np
 
 from typing import List, Optional, Dict, Any
 
@@ -104,3 +107,22 @@ def make_openai_embeddings_func(
     setattr(openai_embeddings, '__embedding_func_params__', params)
 
     return openai_embeddings
+
+
+def wrap_embeddings_func_check_magnitude(
+    embedding_func: EmbeddingFunc,
+    tolerance: float,
+) -> EmbeddingFunc:
+    @functools.wraps(embedding_func)
+    async def wrapped(
+        list_of_strings: List[str],
+    ) -> List[List[float]]:
+        vectors = await embedding_func(list_of_strings)
+        for vector in vectors:
+            v = np.array(vector)
+            mag = np.sqrt(v.dot(v))
+            if np.abs(mag - 1.0) > tolerance:
+                raise ValueError(f"embedding magnitude out of spec: {mag:.8f}")
+        return vectors
+
+    return wrapped

@@ -16,6 +16,7 @@ from .embeddings import (
     embedding_to_bytes,
     embedding_from_bytes,
     make_embeddings_func,
+    wrap_embeddings_func_check_magnitude,
 )
 
 from .types import (
@@ -31,10 +32,13 @@ import logging
 _LOG = logging.getLogger(__name__)
 
 
-# TODO assert that all doc vectors have magnitude 1.0
-
-
 _BULK_EMBEDDING_CHUNK_SIZE = 200
+
+
+# We require the embedding vectors have a magnitude of 1.0 so that we
+# can compute the cosine similarly with just a dot product (it's faster that
+# way!). Since floating point is... floating point, we'll allow a tolerance.
+_EMBEDDING_MAGNITUDE_TOLERANCE = 0.001
 
 
 assert sqlite3.threadsafety > 0, "sqlite3 was not compiled in thread-safe mode"  # see ref [1]
@@ -659,7 +663,10 @@ class KB:
                 # Loading the database will load the embedding func.
                 await self._ensure_db()
                 assert self.embedding_func
-        return self.embedding_func
+        return wrap_embeddings_func_check_magnitude(
+            self.embedding_func,
+            _EMBEDDING_MAGNITUDE_TOLERANCE,
+        )
 
     async def _get_embeddings_as_bytes(
         self,

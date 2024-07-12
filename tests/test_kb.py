@@ -595,3 +595,31 @@ async def test_kb_retrieve():
     assert docs[0]['doc'] and docs[0]['doc']['text'] == 'second doc'
 
     await kb.close()
+
+
+@pytest.mark.asyncio
+async def test_kb_vector_magnitude():
+    async def embedding_func_1(list_of_texts: List[str]) -> List[List[float]]:
+        return [
+            [1.0, 0.1, 0.0]  # <-- magnitude too large
+            for _ in list_of_texts
+        ]
+    async def embedding_func_2(list_of_texts: List[str]) -> List[List[float]]:
+        return [
+            [0.99, 0.0, 0.0]  # <-- magnitude too small
+            for _ in list_of_texts
+        ]
+
+    # Test magnitude too large:
+    kb = KB(_DB_PATH, embedding_func_1)
+    with pytest.raises(ValueError):
+        async with kb.bulk_add_docs() as add_doc:
+            await add_doc("...")
+    await kb.close()
+
+    # Test magnitude too small:
+    kb = KB(_DB_PATH, embedding_func_2)
+    with pytest.raises(ValueError):
+        async with kb.bulk_add_docs() as add_doc:
+            await add_doc("...")
+    await kb.close()
