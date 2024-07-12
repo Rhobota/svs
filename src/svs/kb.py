@@ -18,7 +18,11 @@ from .embeddings import (
     make_embeddings_func,
 )
 
-from .types import DocumentAdder, DocumentId, DocumentRecord, EmbeddingFunc
+from .types import (
+    DocumentAdder, DocumentDeleter,
+    DocumentId, DocumentRecord,
+    EmbeddingFunc,
+)
 
 from .util import chunkify, get_top_k
 
@@ -372,7 +376,7 @@ class _Querier:
             """,
             (),
         )
-        i = 0
+        i = -1
         for i, row in enumerate(res):
             embedding_here = embedding_from_bytes(row[1])
             assert len(embedding_here) == m
@@ -680,15 +684,23 @@ class KB:
             await self.loop.run_in_executor(None, heavy)
             self.embeddings_matrix.invalidate()
 
-    async def del_docs(self, doc_ids: List[DocumentId]) -> None:
+    @asynccontextmanager
+    async def bulk_del_docs(
+        self,
+    ) -> AsyncIterator[DocumentDeleter]:
         async with self.db_lock:
             db = await self._ensure_db()
-            def heavy() -> None:
-                with db as q:
-                    for doc_id in doc_ids:
-                        q.del_doc(doc_id)
-            await self.loop.run_in_executor(None, heavy)
-            self.embeddings_matrix.invalidate()
+            async with db as q:
+                lock = asyncio.Lock()
+                async def del_doc(doc_id: DocumentId) -> None:
+                    async with lock:
+                        def heavy() -> None:
+                            return q.del_doc(doc_id)
+                        await self.loop.run_in_executor(None, heavy)
+                try:
+                    yield del_doc
+                finally:
+                    pass  # any cleanup here
 
     async def retrieve(
         self,

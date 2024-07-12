@@ -27,3 +27,7 @@ class DocumentAdder(Protocol):
         meta: Optional[Dict[str, Any]] = None,
         no_embedding: bool = False,
     ) -> DocumentId: ...
+
+
+class DocumentDeleter(Protocol):
+    async def __call__(self, doc_id: DocumentId) -> None: ...

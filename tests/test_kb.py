@@ -474,6 +474,28 @@ async def test_kb_add_del_doc():
         ]
     db.close()
 
+    # Prev database; bulk delete documents:
+    kb = KB(_DB_PATH)
+    async with kb.bulk_del_docs() as del_doc:
+        await del_doc(5)
+        await del_doc(4)
+    await kb.close()
+
+    # Check the database:
+    db = _DB(_DB_PATH)
+    with db as q:
+        assert json.loads(q.get_key('embedding_func_params')) == {
+            'provider': 'mock',
+        }
+        assert q._debug_embeddings() == [
+            (1, b'\x00\x00\x80?\x00\x00\x00\x00\x00\x00\x00\x00'),
+        ]
+        assert q._debug_docs() == [
+            (1, None, 0, 'first doc', 1, None),
+            (3, 1, 1, 'third doc', None, None),
+        ]
+    db.close()
+
 
 @pytest.mark.asyncio
 async def test_kb_retrieve():
