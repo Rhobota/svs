@@ -80,9 +80,18 @@ SQLite is amazing for *many* reasons, but one is that it correctly handles:
 However, we're going to play it safer and allow just *one* thread access to each database
 connection at once. We'll use asyncio locks around the executor to achieve this, which
 should be an easy and lightweight way to do this. I don't expect much (any?) performance
-benefit from allowing concurrent reads to the underlying SQLite file (despite SQLite
+benefit from allowing concurrent access to the underlying SQLite file (despite SQLite
 theoretically supporting this) so I'd rather play it safe. We can revisit this if we
 change our minds.
+
+Why do I *not* expect perforamcen gain by allowing concurrent access? Well, for one,
+SQLite is thread-safe through mutexes, so enough said. Also we're likely bottlnecked
+by disk IO anyway.
+
+We *could* still see a performance gain by using prepared queries (not sure yet).
+E.g. See https://stackoverflow.com/q/1711631 and https://stackoverflow.com/a/5616969
+However, from early testing, I think *Python* will be our bottleneck (not SQLite)
+so I haven't tried it yet (again, so, not sure about this yet).
 """
 
 
@@ -609,30 +618,6 @@ class KB:
             ]
         return await asyncio.get_running_loop().run_in_executor(None, heavy)
 
-    async def add_doc(
-        self,
-        text: str,
-        parent_id: Optional[DocumentId] = None,
-        meta: Optional[Dict[str, Any]] = None,
-        no_embedding: bool = False,
-    ) -> DocumentId:
-        embedding = None
-        if not no_embedding:
-            embedding = (await self._get_embeddings_as_bytes([text]))[0]
-        async with self.db_lock:
-            db = await self._ensure_db()
-            def heavy() -> DocumentId:
-                with db as q:
-                    return q.add_doc(
-                        text,
-                        parent_id,
-                        meta,
-                        embedding,
-                    )
-            doc_id = await asyncio.get_running_loop().run_in_executor(None, heavy)
-            self.embeddings_matrix.invalidate()
-            return doc_id
-
     @asynccontextmanager
     async def bulk_add_docs(
         self,
@@ -641,6 +626,7 @@ class KB:
         async with self.db_lock:
             db = await self._ensure_db()
             async with db as q:
+                in_context_manager = True
                 lock = asyncio.Lock()
                 needs_embeddings: List[Tuple[DocumentId, str]] = []
                 async def add_doc(
@@ -649,6 +635,7 @@ class KB:
                     meta: Optional[Dict[str, Any]] = None,
                     no_embedding: bool = False,
                 ) -> DocumentId:
+                    assert in_context_manager, "You may not call this function outside of the context manager!"
                     async with lock:
                         def heavy() -> DocumentId:
                             return q.add_doc(
@@ -664,7 +651,7 @@ class KB:
                 try:
                     yield add_doc
                 finally:
-                    pass  # any cleanup here
+                    in_context_manager = False
                 for chunk in chunkify(needs_embeddings, _BULK_EMBEDDING_CHUNK_SIZE):
                     doc_ids = [c[0] for c in chunk]
                     texts = [c[1] for c in chunk]
@@ -675,15 +662,6 @@ class KB:
                     await loop.run_in_executor(None, heavy)
                 self.embeddings_matrix.invalidate()
 
-    async def del_doc(self, doc_id: DocumentId) -> None:
-        async with self.db_lock:
-            db = await self._ensure_db()
-            def heavy() -> None:
-                with db as q:
-                    return q.del_doc(doc_id)
-            await asyncio.get_running_loop().run_in_executor(None, heavy)
-            self.embeddings_matrix.invalidate()
-
     @asynccontextmanager
     async def bulk_del_docs(
         self,
@@ -692,8 +670,10 @@ class KB:
         async with self.db_lock:
             db = await self._ensure_db()
             async with db as q:
+                in_context_manager = True
                 lock = asyncio.Lock()
                 async def del_doc(doc_id: DocumentId) -> None:
+                    assert in_context_manager, "You may not call this function outside of the context manager!"
                     async with lock:
                         def heavy() -> None:
                             return q.del_doc(doc_id)
@@ -701,7 +681,7 @@ class KB:
                 try:
                     yield del_doc
                 finally:
-                    pass  # any cleanup here
+                    in_context_manager = False
 
     async def retrieve(
         self,

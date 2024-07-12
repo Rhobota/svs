@@ -403,13 +403,17 @@ async def test_kb_init_and_close():
 async def test_kb_add_del_doc():
     # New database!
     kb = KB(_DB_PATH, make_mock_embeddings_func())
-    assert (await kb.add_doc("first doc")) == 1
+    async with kb.bulk_add_docs() as add_doc:
+        assert (await add_doc("first doc")) == 1
     await kb.close()
 
     # Prev database; let it remember the embedding function!
     kb = KB(_DB_PATH)
-    assert (await kb.add_doc("second doc", 1, meta={'a': 'b'})) == 2
-    assert (await kb.add_doc("third doc", 1, no_embedding=True)) == 3
+    async with kb.bulk_add_docs() as add_doc:
+        assert (await add_doc("second doc", 1, meta={'a': 'b'})) == 2
+        assert (await add_doc("third doc", 1, no_embedding=True)) == 3
+    with pytest.raises(AssertionError):
+        await add_doc('a')  # <-- use outside context manager is not allowed!
     await kb.close()
 
     # Check the database:
@@ -431,7 +435,8 @@ async def test_kb_add_del_doc():
 
     # Prev database; let's delete a document.
     kb = KB(_DB_PATH)
-    await kb.del_doc(2)
+    async with kb.bulk_del_docs() as del_doc:
+        await del_doc(2)
     await kb.close()
 
     # Check the database:
@@ -449,7 +454,7 @@ async def test_kb_add_del_doc():
         ]
     db.close()
 
-    # Prev database; bulk add documents:
+    # Prev database; add more documents:
     kb = KB(_DB_PATH)
     async with kb.bulk_add_docs() as add_doc:
         assert (await add_doc("forth doc", 1, meta={'new': 'stuff'})) == 4
@@ -474,11 +479,13 @@ async def test_kb_add_del_doc():
         ]
     db.close()
 
-    # Prev database; bulk delete documents:
+    # Prev database; delete more documents:
     kb = KB(_DB_PATH)
     async with kb.bulk_del_docs() as del_doc:
         await del_doc(5)
         await del_doc(4)
+    with pytest.raises(AssertionError):
+        await del_doc(1)  # <-- use outside context manager is not allowed!
     await kb.close()
 
     # Check the database:
@@ -514,9 +521,10 @@ async def test_kb_retrieve():
 
     # New database!
     kb = KB(_DB_PATH, embedding_func)
-    assert (await kb.add_doc("third doc")) == 1
-    assert (await kb.add_doc("first doc")) == 2
-    assert (await kb.add_doc("second doc")) == 3
+    async with kb.bulk_add_docs() as add_doc:
+        assert (await add_doc("third doc")) == 1
+        assert (await add_doc("first doc")) == 2
+        assert (await add_doc("second doc")) == 3
     await kb.close()
 
     # Retrieve!
