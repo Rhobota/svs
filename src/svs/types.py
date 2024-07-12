@@ -28,7 +28,7 @@ class Retrieval(TypedDict):
     doc: Optional[DocumentRecord]
 
 
-class DocumentAdder(Protocol):
+class AsyncDocumentAdder(Protocol):
     async def __call__(
         self,
         text: str,
@@ -38,11 +38,11 @@ class DocumentAdder(Protocol):
     ) -> DocumentId: ...
 
 
-class DocumentDeleter(Protocol):
+class AsyncDocumentDeleter(Protocol):
     async def __call__(self, doc_id: DocumentId) -> None: ...
 
 
-class DocumentQuerier(abc.ABC):
+class AsyncDocumentQuerier(abc.ABC):
     @abc.abstractmethod
     async def query_doc(
         self,

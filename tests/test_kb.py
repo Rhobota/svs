@@ -13,7 +13,7 @@ from svs.embeddings import (
 )
 
 from svs.kb import (
-    KB,
+    AsyncKB,
     _DB,
     SQLITE_IS_STRICT,
 )
@@ -586,14 +586,14 @@ def test_schema_version_bad_version():
 @pytest.mark.asyncio
 async def test_kb_init_and_close():
     # New database; not passing an embedding function.
-    kb = KB(_DB_PATH)
+    kb = AsyncKB(_DB_PATH)
     with pytest.raises(RuntimeError):
         # The following will raise because we are in a new database without
         # passing an embedding function.
         await kb.close()
 
     # New database; this time passing an embedding function.
-    kb = KB(_DB_PATH, make_mock_embeddings_func())
+    kb = AsyncKB(_DB_PATH, make_mock_embeddings_func())
     await kb.load()
     assert kb.embedding_func.__name__ == 'mock_embeddings'  # type: ignore
     await kb.close()
@@ -608,20 +608,20 @@ async def test_kb_init_and_close():
     db.close()
 
     # Prev database; it should rebuild the mock embedding func.
-    kb = KB(_DB_PATH)
+    kb = AsyncKB(_DB_PATH)
     await kb.load()
     assert kb.embedding_func.__name__ == 'mock_embeddings'  # type: ignore
     await kb.close()
     assert kb.embedding_func is None   # <-- cleared on close
 
     # Prev database; override the embedding func.
-    kb = KB(_DB_PATH, make_openai_embeddings_func('fake_model', 'fake_apikey'))
+    kb = AsyncKB(_DB_PATH, make_openai_embeddings_func('fake_model', 'fake_apikey'))
     await kb.load()
     assert kb.embedding_func.__name__ == 'openai_embeddings'  # type: ignore
     await kb.close()
 
     # Prev database; check that vacuum works.
-    kb = KB(_DB_PATH)
+    kb = AsyncKB(_DB_PATH)
     await kb.load()
     assert kb.embedding_func.__name__ == 'mock_embeddings'  # type: ignore
     await kb.close(vacuum=True)
@@ -639,13 +639,13 @@ async def test_kb_init_and_close():
 @pytest.mark.asyncio
 async def test_kb_add_del_doc():
     # New database!
-    kb = KB(_DB_PATH, make_mock_embeddings_func())
+    kb = AsyncKB(_DB_PATH, make_mock_embeddings_func())
     async with kb.bulk_add_docs() as add_doc:
         assert (await add_doc("first doc")) == 1
     await kb.close()
 
     # Prev database; let it remember the embedding function!
-    kb = KB(_DB_PATH)
+    kb = AsyncKB(_DB_PATH)
     async with kb.bulk_add_docs() as add_doc:
         assert (await add_doc("second doc", 1, meta={'a': 'b'})) == 2
         assert (await add_doc("third doc", 1, no_embedding=True)) == 3
@@ -671,7 +671,7 @@ async def test_kb_add_del_doc():
     db.close()
 
     # Prev database; let's delete a document.
-    kb = KB(_DB_PATH)
+    kb = AsyncKB(_DB_PATH)
     async with kb.bulk_del_docs() as del_doc:
         await del_doc(2)
     await kb.close()
@@ -692,7 +692,7 @@ async def test_kb_add_del_doc():
     db.close()
 
     # Prev database; add more documents:
-    kb = KB(_DB_PATH)
+    kb = AsyncKB(_DB_PATH)
     async with kb.bulk_add_docs() as add_doc:
         assert (await add_doc("forth doc", 1, meta={'new': 'stuff'})) == 4
         assert (await add_doc("fifth doc", 3, no_embedding=True)) == 5
@@ -717,7 +717,7 @@ async def test_kb_add_del_doc():
     db.close()
 
     # Prev database; bulk query:
-    kb = KB(_DB_PATH)
+    kb = AsyncKB(_DB_PATH)
     async with kb.bulk_query_docs() as q:
         assert (await q.query_doc(1)) == {
             'id': 1,
@@ -803,7 +803,7 @@ async def test_kb_add_del_doc():
     await kb.close()
 
     # Prev database; delete more documents:
-    kb = KB(_DB_PATH)
+    kb = AsyncKB(_DB_PATH)
     async with kb.bulk_del_docs() as del_doc:
         await del_doc(5)
         await del_doc(4)
@@ -845,7 +845,7 @@ async def test_kb_retrieve():
         return ret
 
     # New database!
-    kb = KB(_DB_PATH, embedding_func)
+    kb = AsyncKB(_DB_PATH, embedding_func)
     async with kb.bulk_add_docs() as add_doc:
         assert (await add_doc("third doc")) == 1
         assert (await add_doc("first doc")) == 2
@@ -853,7 +853,7 @@ async def test_kb_retrieve():
     await kb.close()
 
     # Retrieve!
-    kb = KB(_DB_PATH, embedding_func)
+    kb = AsyncKB(_DB_PATH, embedding_func)
 
     docs = await kb.retrieve('... first ...', n=3)
     assert len(docs) == 3
@@ -876,7 +876,7 @@ async def test_kb_retrieve():
     await kb.close()
 
     # Add and retrieve (i.e. test invalidating the embeddings)
-    kb = KB(_DB_PATH, embedding_func)
+    kb = AsyncKB(_DB_PATH, embedding_func)
     await kb.load()
 
     docs = await kb.retrieve('... forth ...', n=1)
@@ -893,7 +893,7 @@ async def test_kb_retrieve():
     await kb.close()
 
     # Delete and retrieve (i.e. test invalidating the embeddings)
-    kb = KB(_DB_PATH, embedding_func)
+    kb = AsyncKB(_DB_PATH, embedding_func)
     await kb.load()
 
     docs = await kb.retrieve('... forth ...', n=1)
@@ -926,14 +926,14 @@ async def test_kb_vector_magnitude():
         ]
 
     # Test magnitude too large:
-    kb = KB(_DB_PATH, embedding_func_1)
+    kb = AsyncKB(_DB_PATH, embedding_func_1)
     with pytest.raises(ValueError):
         async with kb.bulk_add_docs() as add_doc:
             await add_doc("...")
     await kb.close()
 
     # Test magnitude too small:
-    kb = KB(_DB_PATH, embedding_func_2)
+    kb = AsyncKB(_DB_PATH, embedding_func_2)
     with pytest.raises(ValueError):
         async with kb.bulk_add_docs() as add_doc:
             await add_doc("...")

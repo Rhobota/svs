@@ -20,7 +20,7 @@ from .embeddings import (
 )
 
 from .types import (
-    DocumentAdder, DocumentDeleter, DocumentQuerier,
+    AsyncDocumentAdder, AsyncDocumentDeleter, AsyncDocumentQuerier,
     DocumentId, DocumentRecord,
     EmbeddingFunc, Retrieval,
 )
@@ -592,7 +592,7 @@ class _EmbeddingsMatrix:
             return embeddings_matrix, emb_id_lookup
 
 
-class KB:
+class AsyncKB:
     """Stupid simple knowledge base."""
 
     def __init__(
@@ -683,7 +683,7 @@ class KB:
     @asynccontextmanager
     async def bulk_add_docs(
         self,
-    ) -> AsyncIterator[DocumentAdder]:
+    ) -> AsyncIterator[AsyncDocumentAdder]:
         loop = asyncio.get_running_loop()
         async with self.db_lock:
             db = await self._ensure_db()
@@ -727,7 +727,7 @@ class KB:
     @asynccontextmanager
     async def bulk_del_docs(
         self,
-    ) -> AsyncIterator[DocumentDeleter]:
+    ) -> AsyncIterator[AsyncDocumentDeleter]:
         loop = asyncio.get_running_loop()
         async with self.db_lock:
             db = await self._ensure_db()
@@ -749,14 +749,14 @@ class KB:
     @asynccontextmanager
     async def bulk_query_docs(
         self,
-    ) -> AsyncIterator[DocumentQuerier]:
+    ) -> AsyncIterator[AsyncDocumentQuerier]:
         loop = asyncio.get_running_loop()
         async with self.db_lock:
             db = await self._ensure_db()
             async with db as q:
                 in_context_manager = True
                 lock = asyncio.Lock()
-                class Querier(DocumentQuerier):
+                class Querier(AsyncDocumentQuerier):
                     async def query_doc(
                         self,
                         doc_id: DocumentId,
