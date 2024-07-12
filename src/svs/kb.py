@@ -535,7 +535,6 @@ class KB:
         db_file_path: str,
         embedding_func: Optional[EmbeddingFunc] = None,
     ):
-        self.loop = asyncio.get_running_loop()
         self.db_file_path = db_file_path
         self.db: Union[_DB, None] = None
         self.db_lock = asyncio.Lock()
@@ -574,7 +573,7 @@ class KB:
                 except:
                     db.close()
                     raise
-            db = await self.loop.run_in_executor(None, heavy)
+            db = await asyncio.get_running_loop().run_in_executor(None, heavy)
             self.db = db
         return self.db
 
@@ -585,7 +584,7 @@ class KB:
                 if vacuum:
                     db.vacuum()
                 db.close()
-            await self.loop.run_in_executor(None, heavy)
+            await asyncio.get_running_loop().run_in_executor(None, heavy)
             self.db = None
             self.embeddings_matrix.invalidate()
 
@@ -608,7 +607,7 @@ class KB:
                 embedding_to_bytes(embedding)
                 for embedding in list_of_list_of_floats
             ]
-        return await self.loop.run_in_executor(None, heavy)
+        return await asyncio.get_running_loop().run_in_executor(None, heavy)
 
     async def add_doc(
         self,
@@ -630,7 +629,7 @@ class KB:
                         meta,
                         embedding,
                     )
-            doc_id = await self.loop.run_in_executor(None, heavy)
+            doc_id = await asyncio.get_running_loop().run_in_executor(None, heavy)
             self.embeddings_matrix.invalidate()
             return doc_id
 
@@ -638,6 +637,7 @@ class KB:
     async def bulk_add_docs(
         self,
     ) -> AsyncIterator[DocumentAdder]:
+        loop = asyncio.get_running_loop()
         async with self.db_lock:
             db = await self._ensure_db()
             async with db as q:
@@ -657,7 +657,7 @@ class KB:
                                 meta,
                                 embedding = None,
                             )
-                        doc_id = await self.loop.run_in_executor(None, heavy)
+                        doc_id = await loop.run_in_executor(None, heavy)
                         if not no_embedding:
                             needs_embeddings.append((doc_id, text))
                         return doc_id
@@ -672,7 +672,7 @@ class KB:
                     def heavy() -> None:
                         for doc_id, embedding in zip(doc_ids, embeddings):
                             q.set_doc_embedding(doc_id, embedding, skip_check_old=True)
-                    await self.loop.run_in_executor(None, heavy)
+                    await loop.run_in_executor(None, heavy)
                 self.embeddings_matrix.invalidate()
 
     async def del_doc(self, doc_id: DocumentId) -> None:
@@ -681,13 +681,14 @@ class KB:
             def heavy() -> None:
                 with db as q:
                     return q.del_doc(doc_id)
-            await self.loop.run_in_executor(None, heavy)
+            await asyncio.get_running_loop().run_in_executor(None, heavy)
             self.embeddings_matrix.invalidate()
 
     @asynccontextmanager
     async def bulk_del_docs(
         self,
     ) -> AsyncIterator[DocumentDeleter]:
+        loop = asyncio.get_running_loop()
         async with self.db_lock:
             db = await self._ensure_db()
             async with db as q:
@@ -696,7 +697,7 @@ class KB:
                     async with lock:
                         def heavy() -> None:
                             return q.del_doc(doc_id)
-                        await self.loop.run_in_executor(None, heavy)
+                        await loop.run_in_executor(None, heavy)
                 try:
                     yield del_doc
                 finally:
@@ -707,6 +708,7 @@ class KB:
         query: str,
         n: int,
     ) -> List[DocumentRecord]:
+        loop = asyncio.get_running_loop()
         async with self.db_lock:
             db = await self._ensure_db()
             embeddings_matrix, emb_id_lookup = await self.embeddings_matrix.get(db)
@@ -718,10 +720,10 @@ class KB:
             for _, i in get_top_k(x, n):
                 emb_ids.append(int(emb_id_lookup[i]))
             return emb_ids
-        emb_ids = await self.loop.run_in_executor(None, superheavy)
+        emb_ids = await loop.run_in_executor(None, superheavy)
         async with self.db_lock:
             db = await self._ensure_db()
             async with db as q:
                 def heavy() -> List[DocumentRecord]:
                     return [q.fetch_doc_with_emb_id(emb_id) for emb_id in emb_ids]
-            return await self.loop.run_in_executor(None, heavy)
+            return await loop.run_in_executor(None, heavy)
