@@ -9,7 +9,7 @@
 
 - 💩 Why is it _stupid_?
   - Because it just uses [SQLite](https://www.sqlite.org/) and [NumPy](https://numpy.org/). Nothing fancy.
-  - That is our core design choice. We want something _stupid simple_, yet fast.
+  - That is our core design choice. We want something _stupid simple_, yet _reasonably fast_.
 
 - 🧠 Is it possibly... _smart_ in any way though?
   - Maybe.
