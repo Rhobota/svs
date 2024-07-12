@@ -603,6 +603,7 @@ class KB:
         self.db: Union[_DB, None] = None
         self.db_lock = asyncio.Lock()
         self.embedding_func = embedding_func
+        self.embedding_func_orig = embedding_func
         self.embeddings_matrix = _EmbeddingsMatrix()
 
     async def _ensure_db(self) -> _DB:
@@ -655,18 +656,19 @@ class KB:
                 db.close()
             await asyncio.get_running_loop().run_in_executor(None, heavy)
             self.db = None
+            self.embedding_func = self.embedding_func_orig
             self.embeddings_matrix.invalidate()
 
     async def _get_embedding_func(self) -> EmbeddingFunc:
-        if self.embedding_func is None:
-            async with self.db_lock:
+        async with self.db_lock:
+            if self.embedding_func is None:
                 # Loading the database will load the embedding func.
                 await self._ensure_db()
                 assert self.embedding_func
-        return wrap_embeddings_func_check_magnitude(
-            self.embedding_func,
-            _EMBEDDING_MAGNITUDE_TOLERANCE,
-        )
+            return wrap_embeddings_func_check_magnitude(
+                self.embedding_func,
+                _EMBEDDING_MAGNITUDE_TOLERANCE,
+            )
 
     async def _get_embeddings_as_bytes(
         self,
