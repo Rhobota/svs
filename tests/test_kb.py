@@ -393,18 +393,21 @@ async def test_kb_init_and_close():
 
     # Prev database; it should rebuild the mock embedding func.
     kb = KB(_DB_PATH)
-    await kb.close()
+    await kb.load()
     assert kb.embedding_func.__name__ == 'mock_embeddings'  # type: ignore
+    await kb.close()
 
     # Prev database; override the embedding func.
     kb = KB(_DB_PATH, make_openai_embeddings_func('fake_model', 'fake_apikey'))
-    await kb.close()
+    await kb.load()
     assert kb.embedding_func.__name__ == 'openai_embeddings'  # type: ignore
+    await kb.close()
 
     # Prev database; check that vacuum works.
     kb = KB(_DB_PATH)
-    await kb.close(vacuum=True)
+    await kb.load()
     assert kb.embedding_func.__name__ == 'mock_embeddings'  # type: ignore
+    await kb.close(vacuum=True)
 
     # Check that the embedding function is *unchanged*.
     db = _DB(_DB_PATH)

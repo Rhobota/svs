@@ -415,8 +415,7 @@ class _Querier:
         row = res.fetchone()
         assert row is not None
         n = row[0]
-        if not (n > 0):
-            raise RuntimeError("no embeddings in database!")
+        assert isinstance(n, int)
 
         res = self.conn.execute(
             """
@@ -427,8 +426,10 @@ class _Querier:
             (),
         )
         row = res.fetchone()
-        assert row is not None
-        m = len(embedding_from_bytes(row[0]))
+        if row is not None:
+            m = len(embedding_from_bytes(row[0]))
+        else:
+            m = 0
 
         embeddings_matrix = np.zeros((n, m), dtype=np.float32)
         emb_id_lookup = np.zeros(n, dtype=np.int64)
@@ -660,15 +661,15 @@ class KB:
             self.embeddings_matrix.invalidate()
 
     async def _get_embedding_func(self) -> EmbeddingFunc:
-        async with self.db_lock:
-            if self.embedding_func is None:
+        if self.embedding_func is None:
+            async with self.db_lock:
                 # Loading the database will load the embedding func.
                 await self._ensure_db()
                 assert self.embedding_func
-            return wrap_embeddings_func_check_magnitude(
-                self.embedding_func,
-                _EMBEDDING_MAGNITUDE_TOLERANCE,
-            )
+        return wrap_embeddings_func_check_magnitude(
+            self.embedding_func,
+            _EMBEDDING_MAGNITUDE_TOLERANCE,
+        )
 
     async def _get_embeddings_as_bytes(
         self,
