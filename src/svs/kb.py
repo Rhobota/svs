@@ -586,6 +586,11 @@ class KB:
             self.db = db
         return self.db
 
+    async def load(self) -> None:
+        async with self.db_lock:
+            db = await self._ensure_db()
+            await self.embeddings_matrix.get(db)
+
     async def close(self, vacuum: bool = False) -> None:
         async with self.db_lock:
             db = await self._ensure_db()
@@ -682,6 +687,7 @@ class KB:
                     yield del_doc
                 finally:
                     in_context_manager = False
+                self.embeddings_matrix.invalidate()
 
     async def retrieve(
         self,

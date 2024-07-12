@@ -515,6 +515,8 @@ async def test_kb_retrieve():
                 ret.append([0.0, 1.0, 0.0001])
             elif 'third' in text:
                 ret.append([0.01, 0.0, 1.0])
+            elif 'forth' in text:
+                ret.append([0.707, 0.707, 0.0])
             else:
                 raise ValueError("unexpected doc")
         return ret
@@ -547,5 +549,33 @@ async def test_kb_retrieve():
     assert docs[0]['text'] == 'third doc'
     assert docs[1]['text'] == 'first doc'
     assert docs[2]['text'] == 'second doc'
+
+    await kb.close()
+
+    # Add and retrieve (i.e. test invalidating the embeddings)
+    kb = KB(_DB_PATH, embedding_func)
+    await kb.load()
+
+    async with kb.bulk_add_docs() as add_doc:
+        assert (await add_doc('forth doc')) == 4
+
+    docs = await kb.retrieve('... forth ...', n=1)
+    assert len(docs) == 1
+    assert docs[0]['text'] == 'forth doc'
+
+    await kb.close()
+
+    # Delete and retrieve (i.e. test invalidating the embeddings)
+    kb = KB(_DB_PATH, embedding_func)
+    await kb.load()
+
+    async with kb.bulk_del_docs() as del_doc:
+        await del_doc(1)
+        await del_doc(2)
+        await del_doc(4)
+
+    docs = await kb.retrieve('... forth ...', n=1)
+    assert len(docs) == 1
+    assert docs[0]['text'] == 'second doc'
 
     await kb.close()
