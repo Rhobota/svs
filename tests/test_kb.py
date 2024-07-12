@@ -14,6 +14,7 @@ from svs.embeddings import (
 
 from svs.kb import (
     AsyncKB,
+    KB,
     _DB,
     SQLITE_IS_STRICT,
 )
@@ -584,7 +585,7 @@ def test_schema_version_bad_version():
 
 
 @pytest.mark.asyncio
-async def test_kb_init_and_close():
+async def test_asynckb_init_and_close():
     # New database; not passing an embedding function.
     kb = AsyncKB(_DB_PATH)
     with pytest.raises(RuntimeError):
@@ -637,7 +638,7 @@ async def test_kb_init_and_close():
 
 
 @pytest.mark.asyncio
-async def test_kb_add_del_doc():
+async def test_asynckb_add_del_doc():
     # New database!
     kb = AsyncKB(_DB_PATH, make_mock_embeddings_func())
     async with kb.bulk_add_docs() as add_doc:
@@ -828,7 +829,7 @@ async def test_kb_add_del_doc():
 
 
 @pytest.mark.asyncio
-async def test_kb_retrieve():
+async def test_asynckb_retrieve():
     async def embedding_func(list_of_texts: List[str]) -> List[List[float]]:
         ret: List[List[float]] = []
         for text in list_of_texts:
@@ -913,7 +914,7 @@ async def test_kb_retrieve():
 
 
 @pytest.mark.asyncio
-async def test_kb_vector_magnitude():
+async def test_asynckb_vector_magnitude():
     async def embedding_func_1(list_of_texts: List[str]) -> List[List[float]]:
         return [
             [1.0, 0.1, 0.0]  # <-- magnitude too large
@@ -938,3 +939,349 @@ async def test_kb_vector_magnitude():
         async with kb.bulk_add_docs() as add_doc:
             await add_doc("...")
     await kb.close()
+
+
+def test_kb_init_and_close():
+    # New database; not passing an embedding function.
+    with pytest.raises(RuntimeError):
+        # The following will raise because we are in a new database without
+        # passing an embedding function.
+        kb = KB(_DB_PATH)
+
+    # New database; this time passing an embedding function.
+    kb = KB(_DB_PATH, make_mock_embeddings_func())
+    assert kb.embedding_func.__name__ == 'mock_embeddings'  # type: ignore
+    kb.close()
+
+    # Check that the embedding function was stored in the database above!
+    db = _DB(_DB_PATH)
+    with db as q:
+        assert json.loads(q.get_key('embedding_func_params')) == {
+            'provider': 'mock',
+        }
+        assert q.get_key('schema_version') == 1
+    db.close()
+
+    # Prev database; it should rebuild the mock embedding func.
+    kb = KB(_DB_PATH)
+    assert kb.embedding_func.__name__ == 'mock_embeddings'  # type: ignore
+    kb.close()
+    assert kb.embedding_func is None   # <-- cleared on close
+
+    # Prev database; override the embedding func.
+    kb = KB(_DB_PATH, make_openai_embeddings_func('fake_model', 'fake_apikey'))
+    assert kb.embedding_func.__name__ == 'openai_embeddings'  # type: ignore
+    kb.close()
+
+    # Prev database; check that vacuum works.
+    kb = KB(_DB_PATH)
+    assert kb.embedding_func.__name__ == 'mock_embeddings'  # type: ignore
+    kb.close(vacuum=True)
+
+    # Check that the embedding function is *unchanged*.
+    db = _DB(_DB_PATH)
+    with db as q:
+        assert json.loads(q.get_key('embedding_func_params')) == {
+            'provider': 'mock',
+        }
+        assert q.get_key('schema_version') == 1
+    db.close()
+
+
+def test_kb_add_del_doc():
+    # New database!
+    kb = KB(_DB_PATH, make_mock_embeddings_func())
+    with kb.bulk_add_docs() as add_doc:
+        assert add_doc("first doc") == 1
+    kb.close()
+
+    # Prev database; let it remember the embedding function!
+    kb = KB(_DB_PATH)
+    with kb.bulk_add_docs() as add_doc:
+        assert add_doc("second doc", 1, meta={'a': 'b'}) == 2
+        assert add_doc("third doc", 1, no_embedding=True) == 3
+    with pytest.raises(AssertionError):
+        add_doc('a')  # <-- use outside context manager is not allowed!
+    kb.close()
+
+    # Check the database:
+    db = _DB(_DB_PATH)
+    with db as q:
+        assert json.loads(q.get_key('embedding_func_params')) == {
+            'provider': 'mock',
+        }
+        assert q._debug_embeddings() == [
+            (1, b'\x00\x00\x80?\x00\x00\x00\x00\x00\x00\x00\x00'),
+            (2, b'\x00\x00\x80?\x00\x00\x00\x00\x00\x00\x00\x00'),
+        ]
+        assert q._debug_docs() == [
+            (1, None, 0, 'first doc', 1, None),
+            (2, 1, 1, 'second doc', 2, '{"a": "b"}'),
+            (3, 1, 1, 'third doc', None, None),
+        ]
+    db.close()
+
+    # Prev database; let's delete a document.
+    kb = KB(_DB_PATH)
+    with kb.bulk_del_docs() as del_doc:
+        del_doc(2)
+    kb.close()
+
+    # Check the database:
+    db = _DB(_DB_PATH)
+    with db as q:
+        assert json.loads(q.get_key('embedding_func_params')) == {
+            'provider': 'mock',
+        }
+        assert q._debug_embeddings() == [
+            (1, b'\x00\x00\x80?\x00\x00\x00\x00\x00\x00\x00\x00'),
+        ]
+        assert q._debug_docs() == [
+            (1, None, 0, 'first doc', 1, None),
+            (3, 1, 1, 'third doc', None, None),
+        ]
+    db.close()
+
+    # Prev database; add more documents:
+    kb = KB(_DB_PATH)
+    with kb.bulk_add_docs() as add_doc:
+        assert add_doc("forth doc", 1, meta={'new': 'stuff'}) == 4
+        assert add_doc("fifth doc", 3, no_embedding=True) == 5
+    kb.close()
+
+    # Check the database:
+    db = _DB(_DB_PATH)
+    with db as q:
+        assert json.loads(q.get_key('embedding_func_params')) == {
+            'provider': 'mock',
+        }
+        assert q._debug_embeddings() == [
+            (1, b'\x00\x00\x80?\x00\x00\x00\x00\x00\x00\x00\x00'),
+            (2, b'\x00\x00\x80?\x00\x00\x00\x00\x00\x00\x00\x00'),
+        ]
+        assert q._debug_docs() == [
+            (1, None, 0, 'first doc', 1, None),
+            (3, 1, 1, 'third doc', None, None),
+            (4, 1, 1, 'forth doc', 2, '{"new": "stuff"}'),
+            (5, 3, 2, 'fifth doc', None, None),
+        ]
+    db.close()
+
+    # Prev database; bulk query:
+    kb = KB(_DB_PATH)
+    with kb.bulk_query_docs() as q:
+        assert q.query_doc(1) == {
+            'id': 1,
+            'text': 'first doc',
+            'parent_id': None,
+            'level': 0,
+            'meta': None,
+            'embedding': True,
+        }
+        assert q.query_children(1) == [
+            {
+                'id': 3,
+                'text': 'third doc',
+                'parent_id': 1,
+                'level': 1,
+                'meta': None,
+                'embedding': False,
+            },
+            {
+                'id': 4,
+                'text': 'forth doc',
+                'parent_id': 1,
+                'level': 1,
+                'meta': {'new': 'stuff'},
+                'embedding': True,
+            },
+        ]
+        assert q.query_level(1) == [
+            {
+                'id': 3,
+                'text': 'third doc',
+                'parent_id': 1,
+                'level': 1,
+                'meta': None,
+                'embedding': False,
+            },
+            {
+                'id': 4,
+                'text': 'forth doc',
+                'parent_id': 1,
+                'level': 1,
+                'meta': {'new': 'stuff'},
+                'embedding': True,
+            },
+        ]
+        nodes = []
+        for node in q.dfs_traversal():
+            nodes.append(node)
+        assert nodes == [
+            {
+                'id': 1,
+                'text': 'first doc',
+                'parent_id': None,
+                'level': 0,
+                'meta': None,
+                'embedding': True,
+            },
+            {
+                'id': 3,
+                'text': 'third doc',
+                'parent_id': 1,
+                'level': 1,
+                'meta': None,
+                'embedding': False,
+            },
+            {
+                'id': 5,
+                'text': 'fifth doc',
+                'parent_id': 3,
+                'level': 2,
+                'meta': None,
+                'embedding': False,
+            },
+            {
+                'id': 4,
+                'text': 'forth doc',
+                'parent_id': 1,
+                'level': 1,
+                'meta': {'new': 'stuff'},
+                'embedding': True,
+            },
+        ]
+    kb.close()
+
+    # Prev database; delete more documents:
+    kb = KB(_DB_PATH)
+    with kb.bulk_del_docs() as del_doc:
+        del_doc(5)
+        del_doc(4)
+    with pytest.raises(AssertionError):
+        del_doc(1)  # <-- use outside context manager is not allowed!
+    kb.close()
+
+    # Check the database:
+    db = _DB(_DB_PATH)
+    with db as q:
+        assert json.loads(q.get_key('embedding_func_params')) == {
+            'provider': 'mock',
+        }
+        assert q._debug_embeddings() == [
+            (1, b'\x00\x00\x80?\x00\x00\x00\x00\x00\x00\x00\x00'),
+        ]
+        assert q._debug_docs() == [
+            (1, None, 0, 'first doc', 1, None),
+            (3, 1, 1, 'third doc', None, None),
+        ]
+    db.close()
+
+
+def test_kb_retrieve():
+    async def embedding_func(list_of_texts: List[str]) -> List[List[float]]:
+        ret: List[List[float]] = []
+        for text in list_of_texts:
+            if 'first' in text:
+                ret.append([1.0, 0.001, 0.0])
+            elif 'second' in text:
+                ret.append([0.0, 1.0, 0.0001])
+            elif 'third' in text:
+                ret.append([0.01, 0.0, 1.0])
+            elif 'forth' in text:
+                ret.append([0.707, 0.707, 0.0])
+            else:
+                raise ValueError("unexpected doc")
+        return ret
+
+    # New database!
+    kb = KB(_DB_PATH, embedding_func)
+    with kb.bulk_add_docs() as add_doc:
+        assert add_doc("third doc") == 1
+        assert add_doc("first doc") == 2
+        assert add_doc("second doc") == 3
+    kb.close()
+
+    # Retrieve!
+    kb = KB(_DB_PATH, embedding_func)
+
+    docs = kb.retrieve('... first ...', n=3)
+    assert len(docs) == 3
+    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'first doc'
+    assert docs[1]['doc'] and docs[1]['doc']['text'] == 'third doc'
+    assert docs[2]['doc'] and docs[2]['doc']['text'] == 'second doc'
+
+    docs = kb.retrieve('... second ...', n=3)
+    assert len(docs) == 3
+    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'second doc'
+    assert docs[1]['doc'] and docs[1]['doc']['text'] == 'first doc'
+    assert docs[2]['doc'] and docs[2]['doc']['text'] == 'third doc'
+
+    docs = kb.retrieve('... third ...', n=3)
+    assert len(docs) == 3
+    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'third doc'
+    assert docs[1]['doc'] and docs[1]['doc']['text'] == 'first doc'
+    assert docs[2]['doc'] and docs[2]['doc']['text'] == 'second doc'
+
+    kb.close()
+
+    # Add and retrieve (i.e. test invalidating the embeddings)
+    kb = KB(_DB_PATH, embedding_func)
+
+    docs = kb.retrieve('... forth ...', n=1)
+    assert len(docs) == 1
+    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'first doc'
+
+    with kb.bulk_add_docs() as add_doc:
+        assert add_doc('forth doc') == 4
+
+    docs = kb.retrieve('... forth ...', n=1)
+    assert len(docs) == 1
+    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'forth doc'
+
+    kb.close()
+
+    # Delete and retrieve (i.e. test invalidating the embeddings)
+    kb = KB(_DB_PATH, embedding_func)
+
+    docs = kb.retrieve('... forth ...', n=1)
+    assert len(docs) == 1
+    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'forth doc'
+
+    with kb.bulk_del_docs() as del_doc:
+        del_doc(1)
+        del_doc(2)
+        del_doc(4)
+
+    docs = kb.retrieve('... forth ...', n=1)
+    assert len(docs) == 1
+    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'second doc'
+
+    kb.close()
+
+
+def test_kb_vector_magnitude():
+    async def embedding_func_1(list_of_texts: List[str]) -> List[List[float]]:
+        return [
+            [1.0, 0.1, 0.0]  # <-- magnitude too large
+            for _ in list_of_texts
+        ]
+    async def embedding_func_2(list_of_texts: List[str]) -> List[List[float]]:
+        return [
+            [0.99, 0.0, 0.0]  # <-- magnitude too small
+            for _ in list_of_texts
+        ]
+
+    # Test magnitude too large:
+    kb = KB(_DB_PATH, embedding_func_1)
+    with pytest.raises(ValueError):
+        with kb.bulk_add_docs() as add_doc:
+            add_doc("...")
+    kb.close()
+
+    # Test magnitude too small:
+    kb = KB(_DB_PATH, embedding_func_2)
+    with pytest.raises(ValueError):
+        with kb.bulk_add_docs() as add_doc:
+            add_doc("...")
+    kb.close()

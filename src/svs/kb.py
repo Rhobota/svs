@@ -1,13 +1,14 @@
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import contextmanager, asynccontextmanager
 import sqlite3
 import json
 from datetime import datetime, timezone
+from threading import Thread
 
 from types import TracebackType
 from typing import (
-    AsyncIterator, List, Tuple, Dict, Any, Literal,
-    Optional, Union, Type,
+    AsyncIterator, Iterator, List, Tuple, Dict,
+    Any, Literal, Optional, Union, Type,
 )
 
 import numpy as np
@@ -21,6 +22,7 @@ from .embeddings import (
 
 from .types import (
     AsyncDocumentAdder, AsyncDocumentDeleter, AsyncDocumentQuerier,
+    DocumentAdder, DocumentDeleter, DocumentQuerier,
     DocumentId, DocumentRecord,
     EmbeddingFunc, Retrieval,
 )
@@ -578,6 +580,16 @@ class _EmbeddingsMatrix:
         self.embeddings_matrix = None
         self.emb_id_lookup = None
 
+    def get_sync(self, db: _DB) -> Tuple[np.ndarray, np.ndarray]:
+        if self.embeddings_matrix is not None and self.emb_id_lookup is not None:
+            return self.embeddings_matrix, self.emb_id_lookup
+        else:
+            with db as q:
+                embeddings_matrix, emb_id_lookup = q.build_embeddings_matrix()
+            self.embeddings_matrix = embeddings_matrix
+            self.emb_id_lookup = emb_id_lookup
+            return embeddings_matrix, emb_id_lookup
+
     async def get(self, db: _DB) -> Tuple[np.ndarray, np.ndarray]:
         if self.embeddings_matrix is not None and self.emb_id_lookup is not None:
             return self.embeddings_matrix, self.emb_id_lookup
@@ -590,6 +602,35 @@ class _EmbeddingsMatrix:
             self.embeddings_matrix = embeddings_matrix
             self.emb_id_lookup = emb_id_lookup
             return embeddings_matrix, emb_id_lookup
+
+
+def _db_check(db: _DB, embedding_func: Optional[EmbeddingFunc]) -> EmbeddingFunc:
+    db.check_or_set_schema_version()
+    with db as q:
+        try:
+            db_eparams = json.loads(q.get_key('embedding_func_params'))
+        except KeyError:
+            db_eparams = None
+    init_eparams = getattr(embedding_func, '__embedding_func_params__', None)
+    if db_eparams is not None and init_eparams is not None:
+        if db_eparams != init_eparams:
+            _LOG.warning(f"You are overriding the embedding function stored in the database! Be sure this is what you want to do. Your function: {init_eparams}, database function: {db_eparams}")
+        assert embedding_func
+    elif db_eparams is not None:
+        if embedding_func is not None:
+            _LOG.warning(f"You are overriding the embedding function stored in the database! Be sure this is what you want to do. Your function: *unknown params*, database function: {db_eparams}")
+        else:
+            embedding_func = make_embeddings_func(db_eparams)
+    elif init_eparams is not None:
+        with db as q:
+            q.set_key('embedding_func_params', json.dumps(init_eparams))
+        assert embedding_func
+    else:
+        if embedding_func is not None:
+            _LOG.warning("Cannot store this non-standard embeddings function to the database. That's okay, but you'll have to explicitly pass this function to all future instantiations of this database.")
+        else:
+            raise RuntimeError("No embedding function. You did not passed one to constructor and there is not one in the database. You must pass the embedding function you want to use to the constructor on the *first* usage of a new database; it will be stored in the database for later use.")
+    return embedding_func
 
 
 class AsyncKB:
@@ -612,29 +653,7 @@ class AsyncKB:
             def heavy() -> _DB:
                 db = _DB(self.db_file_path)
                 try:
-                    db.check_or_set_schema_version()
-                    with db as q:
-                        try:
-                            db_eparams = json.loads(q.get_key('embedding_func_params'))
-                        except KeyError:
-                            db_eparams = None
-                    init_eparams = getattr(self.embedding_func, '__embedding_func_params__', None)
-                    if db_eparams is not None and init_eparams is not None:
-                        if db_eparams != init_eparams:
-                            _LOG.warning(f"You are overriding the embedding function stored in the database! Be sure this is what you want to do. Your function: {init_eparams}, database function: {db_eparams}")
-                    elif db_eparams is not None:
-                        if self.embedding_func is not None:
-                            _LOG.warning(f"You are overriding the embedding function stored in the database! Be sure this is what you want to do. Your function: *unknown params*, database function: {db_eparams}")
-                        else:
-                            self.embedding_func = make_embeddings_func(db_eparams)
-                    elif init_eparams is not None:
-                        with db as q:
-                            q.set_key('embedding_func_params', json.dumps(init_eparams))
-                    else:
-                        if self.embedding_func is not None:
-                            _LOG.warning("Cannot store this non-standard embeddings function to the database. That's okay, but you'll have to explicitly pass this function to all future instantiations of this database.")
-                        else:
-                            raise RuntimeError("No embedding function. You did not passed one to constructor and there is not one in the database. You must pass the embedding function you want to use to the constructor on the *first* usage of a new database; it will be stored in the database for later use.")
+                    self.embedding_func = _db_check(db, self.embedding_func)
                     return db
                 except:
                     db.close()
@@ -844,3 +863,200 @@ class AsyncKB:
                         })
                     return res
                 return await loop.run_in_executor(None, heavy)
+
+
+def _loop_main(loop: asyncio.AbstractEventLoop) -> None:
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+
+class KB:
+    """Stupid simple knowledge base."""
+
+    def __init__(
+        self,
+        db_file_path: str,
+        embedding_func: Optional[EmbeddingFunc] = None,
+    ):
+        self.db_file_path = db_file_path
+        self.db: Union[_DB, None] = _DB(db_file_path)
+        self.embedding_func = embedding_func
+        self.embedding_func_orig = embedding_func
+        self.embeddings_matrix = _EmbeddingsMatrix()
+        try:
+            self.embedding_func = _db_check(self.db, self.embedding_func)
+        except:
+            self.db.close()
+            self.db = None
+            raise
+        self.loop = asyncio.new_event_loop()
+        self.thread: Union[Thread, None] = Thread(target=_loop_main, args=(self.loop,))
+        self.thread.daemon = True
+        self.thread.start()
+
+    def close(self, vacuum: bool = False) -> None:
+        if self.thread is not None:
+            async def _stop() -> None:
+                self.loop.stop()
+            asyncio.run_coroutine_threadsafe(_stop(), self.loop)
+            self.thread.join()
+            self.thread = None
+        if self.db is not None:
+            if vacuum:
+                self.db.vacuum()
+            self.db.close()
+            self.db = None
+            self.embedding_func = self.embedding_func_orig
+            self.embeddings_matrix.invalidate()
+
+    def _get_embedding_func(self) -> EmbeddingFunc:
+        assert self.embedding_func   # <-- true if we haven't closed
+        return wrap_embeddings_func_check_magnitude(
+            self.embedding_func,
+            _EMBEDDING_MAGNITUDE_TOLERANCE,
+        )
+
+    def _get_embeddings_as_bytes(
+        self,
+        list_of_strings: List[str],
+    ) -> List[bytes]:
+        func = self._get_embedding_func()
+        list_of_list_of_floats = asyncio.run_coroutine_threadsafe(func(list_of_strings), self.loop).result()
+        return [
+            embedding_to_bytes(embedding)
+            for embedding in list_of_list_of_floats
+        ]
+
+    @contextmanager
+    def bulk_add_docs(
+        self,
+    ) -> Iterator[DocumentAdder]:
+        assert self.db is not None
+        with self.db as q:
+            in_context_manager = True
+            needs_embeddings: List[Tuple[DocumentId, str]] = []
+            def add_doc(
+                text: str,
+                parent_id: Optional[DocumentId] = None,
+                meta: Optional[Dict[str, Any]] = None,
+                no_embedding: bool = False,
+            ) -> DocumentId:
+                assert in_context_manager, "You may not call this function outside of the context manager!"
+                doc_id = q.add_doc(
+                    text,
+                    parent_id,
+                    meta,
+                    embedding = None,
+                )
+                if not no_embedding:
+                    needs_embeddings.append((doc_id, text))
+                return doc_id
+            try:
+                yield add_doc
+            finally:
+                in_context_manager = False
+            for chunk in chunkify(needs_embeddings, _BULK_EMBEDDING_CHUNK_SIZE):
+                doc_ids = [c[0] for c in chunk]
+                texts = [c[1] for c in chunk]
+                embeddings = self._get_embeddings_as_bytes(texts)
+                for doc_id, embedding in zip(doc_ids, embeddings):
+                    q.set_doc_embedding(doc_id, embedding, skip_check_old=True)
+            self.embeddings_matrix.invalidate()
+
+    @contextmanager
+    def bulk_del_docs(
+        self,
+    ) -> Iterator[DocumentDeleter]:
+        assert self.db is not None
+        with self.db as q:
+            in_context_manager = True
+            def del_doc(doc_id: DocumentId) -> None:
+                assert in_context_manager, "You may not call this function outside of the context manager!"
+                return q.del_doc(doc_id)
+            try:
+                yield del_doc
+            finally:
+                in_context_manager = False
+            self.embeddings_matrix.invalidate()
+
+    @contextmanager
+    def bulk_query_docs(
+        self,
+    ) -> Iterator[DocumentQuerier]:
+        assert self.db is not None
+        with self.db as q:
+            in_context_manager = True
+            class Querier(DocumentQuerier):
+                def query_doc(
+                    self,
+                    doc_id: DocumentId,
+                    include_embedding: bool = False,
+                ) -> DocumentRecord:
+                    assert in_context_manager, "You may not call this function outside of the context manager!"
+                    return q.fetch_doc(doc_id, include_embedding)
+
+                def query_children(
+                    self,
+                    doc_id: DocumentId,
+                    include_embedding: bool = False,
+                ) -> List[DocumentRecord]:
+                    assert in_context_manager, "You may not call this function outside of the context manager!"
+                    return q.fetch_doc_children(doc_id, include_embedding)
+
+                def query_level(
+                    self,
+                    level: int,
+                    include_embedding: bool = False,
+                ) -> List[DocumentRecord]:
+                    assert in_context_manager, "You may not call this function outside of the context manager!"
+                    return q.fetch_docs_at_level(level, include_embedding)
+
+                def dfs_traversal(
+                    self,
+                    include_embedding: bool = False,
+                ) -> Iterator[DocumentRecord]:
+                    def visit(doc: DocumentRecord) -> Iterator[DocumentRecord]:
+                        yield doc
+                        children = self.query_children(doc['id'], include_embedding)
+                        for child in children:
+                            for subchild in visit(child):
+                                yield subchild
+                    level_0 = self.query_level(0, include_embedding)
+                    for level_0_doc in level_0:
+                        for subdoc in visit(level_0_doc):
+                            yield subdoc
+
+            try:
+                yield Querier()
+            finally:
+                in_context_manager = False
+
+    def retrieve(
+        self,
+        query: str,
+        n: int,
+        include_documents: bool = True,
+    ) -> List[Retrieval]:
+        assert self.db is not None
+        embeddings_matrix, emb_id_lookup = self.embeddings_matrix.get_sync(self.db)
+        func = self._get_embedding_func()
+        query_list_floats = asyncio.run_coroutine_threadsafe(func([query]), self.loop).result()[0]
+        query_vec = np.array(query_list_floats, dtype=np.float32)
+        def superheavy() -> List[Tuple[float, int]]:
+            x = np.dot(embeddings_matrix, query_vec)  # numpy go brrr
+            emb_ids = []
+            for score, index in get_top_k(x, n):
+                emb_ids.append((score, int(emb_id_lookup[index])))
+            return emb_ids
+        emb_ids = superheavy()
+        with self.db as q:
+            res: List[Retrieval] = []
+            for score, emb_id in emb_ids:
+                doc_id = q.fetch_doc_with_emb_id(emb_id)
+                doc = q.fetch_doc(doc_id, include_embedding=False) if include_documents else None
+                res.append({
+                    'score': score,
+                    'doc_id': doc_id,
+                    'doc': doc,
+                })
+            return res
