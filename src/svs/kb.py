@@ -661,11 +661,7 @@ class KB:
             self.embeddings_matrix.invalidate()
 
     async def _get_embedding_func(self) -> EmbeddingFunc:
-        if self.embedding_func is None:
-            async with self.db_lock:
-                # Loading the database will load the embedding func.
-                await self._ensure_db()
-                assert self.embedding_func
+        assert self.embedding_func   # <-- in all places this is called, the db has been loaded already
         return wrap_embeddings_func_check_magnitude(
             self.embedding_func,
             _EMBEDDING_MAGNITUDE_TOLERANCE,
@@ -847,4 +843,4 @@ class KB:
                             'doc': doc,
                         })
                     return res
-            return await loop.run_in_executor(None, heavy)
+                return await loop.run_in_executor(None, heavy)

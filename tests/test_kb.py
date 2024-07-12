@@ -3,6 +3,8 @@ import pytest
 import os
 import json
 
+import numpy as np
+
 from typing import List
 
 from svs.embeddings import (
@@ -265,6 +267,101 @@ def test_doc_table():
         with pytest.raises(KeyError):
             q.fetch_doc(88, include_embedding=True)
 
+        assert q.fetch_doc_children(2, include_embedding=False) == [
+            {
+                'id': 4,
+                'parent_id': 2,
+                'level': 2,
+                'text': 'forth doc',
+                'embedding': True,
+                'meta': {'test': 'again'},
+            },
+        ]
+
+        new_doc_id = q.add_doc(
+            text      = 'sixth doc',
+            parent_id = 2,
+            meta      = {'test': 6},
+            embedding = b'\x07',
+        )
+        assert new_doc_id == 6
+
+        assert q.fetch_doc_children(2, include_embedding=False) == [
+            {
+                'id': 4,
+                'parent_id': 2,
+                'level': 2,
+                'text': 'forth doc',
+                'embedding': True,
+                'meta': {'test': 'again'},
+            },
+            {
+                'id': 6,
+                'parent_id': 2,
+                'level': 2,
+                'text': 'sixth doc',
+                'embedding': True,
+                'meta': {'test': 6},
+            },
+        ]
+
+        assert q.fetch_docs_at_level(0, include_embedding=False) == [
+            {
+                'id': 1,
+                'parent_id': None,
+                'level': 0,
+                'text': 'first doc',
+                'embedding': True,
+                'meta': None,
+            },
+            {
+                'id': 3,
+                'parent_id': None,
+                'level': 0,
+                'text': 'third doc',
+                'embedding': True,
+                'meta': {'test': 'stuff'},
+            },
+        ]
+
+        assert q.fetch_docs_at_level(1, include_embedding=True) == [
+            {
+                'id': 2,
+                'parent_id': 1,
+                'level': 1,
+                'text': 'second doc',
+                'embedding': [2.0, 3.5],
+                'meta': None,
+            },
+        ]
+
+        assert q.fetch_docs_at_level(2, include_embedding=False) == [
+            {
+                'id': 4,
+                'parent_id': 2,
+                'level': 2,
+                'text': 'forth doc',
+                'embedding': True,
+                'meta': {'test': 'again'},
+            },
+            {
+                'id': 6,
+                'parent_id': 2,
+                'level': 2,
+                'text': 'sixth doc',
+                'embedding': True,
+                'meta': {'test': 6},
+            },
+        ]
+
+        assert q.fetch_doc_with_emb_id(1) == 1
+        assert q.fetch_doc_with_emb_id(2) == 2
+        assert q.fetch_doc_with_emb_id(3) == 3
+        assert q.fetch_doc_with_emb_id(4) == 4
+        assert q.fetch_doc_with_emb_id(5) == 6
+        with pytest.raises(KeyError):
+            q.fetch_doc_with_emb_id(6)
+
     db.close()
 
     # **Re-open** the database
@@ -274,6 +371,7 @@ def test_doc_table():
             # This is a parent, so we can't delete it until we delete its children.
             q.del_doc(2)
 
+        q.del_doc(6)
         q.del_doc(5)
         q.del_doc(4)
         q.del_doc(2)
@@ -317,6 +415,64 @@ def test_doc_table():
     db.close()
 
 
+def test_embedding_matrix():
+    # Open the database
+    db = _DB(_DB_PATH)
+    with db as q:
+        doc_a_id = q.add_doc(
+            text      = 'first doc',
+            parent_id = None,
+            meta      = None,
+            embedding = b'\x00\x00\x80?\x00\x00`@',  # [1.0, 3.5]
+        )
+        assert doc_a_id == 1
+
+        doc_b_id = q.add_doc(
+            text      = 'second doc',
+            parent_id = 1,
+            meta      = None,
+            embedding = b'\x00\x00\x00@\x00\x00`@',  # [2.0, 3.5]
+        )
+        assert doc_b_id == 2
+
+        doc_c_id = q.add_doc(
+            text      = 'third doc',
+            parent_id = None,
+            meta      = {'test': 'stuff'},
+            embedding = b'\x00\x00\x00@\x00\x00\x80?', # [2.0, 1.0]
+        )
+        assert doc_c_id == 3
+
+        doc_d_id = q.add_doc(
+            text      = 'forth doc',
+            parent_id = 2,
+            meta      = {'test': 'again'},
+            embedding = b'\x00\x00`@\x00\x00\x80@',   # [3.5, 4.0]
+        )
+        assert doc_d_id == 4
+
+        embeddings_matrix, emb_id_lookup = q.build_embeddings_matrix()
+        assert (embeddings_matrix == np.array([
+            [1.0, 3.5],
+            [2.0, 3.5],
+            [2.0, 1.0],
+            [3.5, 4.0],
+        ])).all()
+        assert (emb_id_lookup == np.array([1, 2, 3, 4])).all()
+
+        q.del_doc(3)
+
+        embeddings_matrix, emb_id_lookup = q.build_embeddings_matrix()
+        assert (embeddings_matrix == np.array([
+            [1.0, 3.5],
+            [2.0, 3.5],
+            [3.5, 4.0],
+        ])).all()
+        assert (emb_id_lookup == np.array([1, 2, 4])).all()
+
+    db.close()
+
+
 def test_rollback():
     # Open the database
     db = _DB(_DB_PATH)
@@ -347,6 +503,37 @@ def test_rollback():
     db.close()
 
 
+@pytest.mark.asyncio
+async def test_rollback_async():
+    # Open the database
+    db = _DB(_DB_PATH)
+    async with db as q:
+        assert q._debug_keyval() == {}
+        q.set_key('this', 'will persist')
+        assert q._debug_keyval() == {
+            'this': 'will persist',
+        }
+    saw_staged_update = False
+    with pytest.raises(KeyError):
+        async with db as q:
+            assert q._debug_keyval() == {
+                'this': 'will persist',
+            }
+            q.set_key('this', 'will be rolled back')
+            assert q._debug_keyval() == {
+                'this': 'will be rolled back',
+            }
+            saw_staged_update = True
+            q.del_key('dne')   # <-- this raises KeyError; since it's uncaught it will `rollback` the transaction!
+    assert saw_staged_update
+    async with db as q:
+        # Check that the transaction was rolled back (i.e. `test` wasn't updated).
+        assert q._debug_keyval() == {
+            'this': 'will persist',
+        }
+    db.close()
+
+
 def test_vacuum():
     # Open the database
     db = _DB(_DB_PATH)
@@ -368,6 +555,34 @@ def test_vacuum():
     db.close()
 
 
+def test_schema_version_new_database():
+    # Open the database
+    db = _DB(_DB_PATH)
+    db.check_or_set_schema_version()  # <-- will `set_key` since this is a new database
+    with db as q:
+        assert q.get_key('schema_version') == 1
+    db.close()
+
+
+def test_schema_version_same_version():
+    # Open the database
+    db = _DB(_DB_PATH)
+    with db as q:
+        q.set_key('schema_version', 1)  # <-- current version
+    db.check_or_set_schema_version()  # <-- will *not* raise; version is current
+    db.close()
+
+
+def test_schema_version_bad_version():
+    # Open the database
+    db = _DB(_DB_PATH)
+    with db as q:
+        q.set_key('schema_version', 99)  # <-- BAD VERSION
+    with pytest.raises(RuntimeError):
+        db.check_or_set_schema_version()
+    db.close()
+
+
 @pytest.mark.asyncio
 async def test_kb_init_and_close():
     # New database; not passing an embedding function.
@@ -379,8 +594,9 @@ async def test_kb_init_and_close():
 
     # New database; this time passing an embedding function.
     kb = KB(_DB_PATH, make_mock_embeddings_func())
-    await kb.close()
+    await kb.load()
     assert kb.embedding_func.__name__ == 'mock_embeddings'  # type: ignore
+    await kb.close()
 
     # Check that the embedding function was stored in the database above!
     db = _DB(_DB_PATH)
@@ -396,6 +612,7 @@ async def test_kb_init_and_close():
     await kb.load()
     assert kb.embedding_func.__name__ == 'mock_embeddings'  # type: ignore
     await kb.close()
+    assert kb.embedding_func is None   # <-- cleared on close
 
     # Prev database; override the embedding func.
     kb = KB(_DB_PATH, make_openai_embeddings_func('fake_model', 'fake_apikey'))
@@ -415,6 +632,7 @@ async def test_kb_init_and_close():
         assert json.loads(q.get_key('embedding_func_params')) == {
             'provider': 'mock',
         }
+        assert q.get_key('schema_version') == 1
     db.close()
 
 
@@ -498,6 +716,92 @@ async def test_kb_add_del_doc():
         ]
     db.close()
 
+    # Prev database; bulk query:
+    kb = KB(_DB_PATH)
+    async with kb.bulk_query_docs() as q:
+        assert (await q.query_doc(1)) == {
+            'id': 1,
+            'text': 'first doc',
+            'parent_id': None,
+            'level': 0,
+            'meta': None,
+            'embedding': True,
+        }
+        assert (await q.query_children(1)) == [
+            {
+                'id': 3,
+                'text': 'third doc',
+                'parent_id': 1,
+                'level': 1,
+                'meta': None,
+                'embedding': False,
+            },
+            {
+                'id': 4,
+                'text': 'forth doc',
+                'parent_id': 1,
+                'level': 1,
+                'meta': {'new': 'stuff'},
+                'embedding': True,
+            },
+        ]
+        assert (await q.query_level(1)) == [
+            {
+                'id': 3,
+                'text': 'third doc',
+                'parent_id': 1,
+                'level': 1,
+                'meta': None,
+                'embedding': False,
+            },
+            {
+                'id': 4,
+                'text': 'forth doc',
+                'parent_id': 1,
+                'level': 1,
+                'meta': {'new': 'stuff'},
+                'embedding': True,
+            },
+        ]
+        nodes = []
+        async for node in q.dfs_traversal():
+            nodes.append(node)
+        assert nodes == [
+            {
+                'id': 1,
+                'text': 'first doc',
+                'parent_id': None,
+                'level': 0,
+                'meta': None,
+                'embedding': True,
+            },
+            {
+                'id': 3,
+                'text': 'third doc',
+                'parent_id': 1,
+                'level': 1,
+                'meta': None,
+                'embedding': False,
+            },
+            {
+                'id': 5,
+                'text': 'fifth doc',
+                'parent_id': 3,
+                'level': 2,
+                'meta': None,
+                'embedding': False,
+            },
+            {
+                'id': 4,
+                'text': 'forth doc',
+                'parent_id': 1,
+                'level': 1,
+                'meta': {'new': 'stuff'},
+                'embedding': True,
+            },
+        ]
+    await kb.close()
+
     # Prev database; delete more documents:
     kb = KB(_DB_PATH)
     async with kb.bulk_del_docs() as del_doc:
@@ -575,6 +879,10 @@ async def test_kb_retrieve():
     kb = KB(_DB_PATH, embedding_func)
     await kb.load()
 
+    docs = await kb.retrieve('... forth ...', n=1)
+    assert len(docs) == 1
+    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'first doc'
+
     async with kb.bulk_add_docs() as add_doc:
         assert (await add_doc('forth doc')) == 4
 
@@ -587,6 +895,10 @@ async def test_kb_retrieve():
     # Delete and retrieve (i.e. test invalidating the embeddings)
     kb = KB(_DB_PATH, embedding_func)
     await kb.load()
+
+    docs = await kb.retrieve('... forth ...', n=1)
+    assert len(docs) == 1
+    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'forth doc'
 
     async with kb.bulk_del_docs() as del_doc:
         await del_doc(1)
