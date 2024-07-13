@@ -5,11 +5,13 @@ from collections import OrderedDict
 import functools
 import hashlib
 import os
+from urllib.parse import urlparse
+from pathlib import Path
 
 import numpy as np
 
 from typing import (
-    Optional, Union, Dict, Literal, List, Tuple,
+    Optional, Union, Dict, List, Tuple,
     TypeVar, Callable, Awaitable,
 )
 
@@ -87,11 +89,11 @@ def cached(
 
 
 @locked()
-async def file_cached_wget(url: str) -> bytes:
+async def file_cached_wget(url: str) -> Path:
     """
     HTTP _get_ the resource at `url`, and cache the results in the local
     file-system for subsequent calls to get the same `url` (all in an
-    asyncio-friendly way).
+    asyncio-friendly way). Returns the path to the locally-stored file.
 
     This function is locked so you can only get one `url` at a time. That
     is a heavy-handed way to deal with the race-condition so we don't get
@@ -102,36 +104,38 @@ async def file_cached_wget(url: str) -> bytes:
     """
     loop = asyncio.get_running_loop()
     hash = hashlib.md5(url.encode()).hexdigest()
-    path = os.path.join('.remote_cache', hash)
-    def _read_local() -> Union[bytes, Literal[False]]:
-        if os.path.exists(path):
-            with open(path, 'rb') as f:
-                return f.read()
-        return False
-    local_result = await loop.run_in_executor(None, _read_local)
-    if local_result is not False:
-        _LOG.info(f"file_cached_wget({repr(url)}): CACHE HIT")
-        return local_result
-    _LOG.info(f"file_cached_wget({repr(url)}): cache miss ... will *get*")
-    async with aiohttp.ClientSession(raise_for_status=True) as session:
-        async with session.get(url) as response:
-            data = await response.read()
-    def _write_local() -> None:
+    extension = os.path.splitext(urlparse(url).path)[1]
+    path = Path('.remote_cache') / Path(f'{hash}{extension}')
+    def _check_exists() -> bool:
         os.makedirs(os.path.dirname(path), exist_ok=True)
+        return os.path.exists(path)
+    exists = await loop.run_in_executor(None, _check_exists)
+    if exists:
+        _LOG.info(f"file_cached_wget({repr(url)}): CACHE HIT")
+        return path
+    _LOG.info(f"file_cached_wget({repr(url)}): cache miss ... will *get*")
+    f = await loop.run_in_executor(None, open, path, 'wb')
+    closed: bool = False
+    try:
+        async with aiohttp.ClientSession(raise_for_status=True) as session:
+            async with session.get(url) as response:
+                async for data in response.content.iter_chunked(4096 * 4096):
+                    await loop.run_in_executor(None, f.write, data)
+        await loop.run_in_executor(None, f.close)
+        closed = True
+        return path
+    except Exception as e:
         try:
-            with open(path, 'wb') as f:
-                f.write(data)
-        except Exception as e:
-            try:
-                # It's important we don't accidentally leave
-                # partially-written files!
-                os.unlink(path)
-            except Exception as e2:
-                # We tried our best; nothing we can do now except log this.
-                _LOG.exception(e2)
-            raise e
-    await loop.run_in_executor(None, _write_local)
-    return data
+            # It's important we don't accidentally leave opened and/or
+            # partially-written files!
+            if not closed:
+                await loop.run_in_executor(None, f.close)
+                closed = True
+            await loop.run_in_executor(None, os.unlink, path)
+        except Exception as e2:
+            # We tried our best; nothing we can do now except log this.
+            _LOG.exception(e2)
+        raise e
 
 
 def get_top_k(scores: np.ndarray, top_k: int) -> List[Tuple[float, int]]:

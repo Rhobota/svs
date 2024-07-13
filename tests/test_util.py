@@ -2,6 +2,7 @@ import pytest
 import asyncio
 import random
 import os
+from pathlib import Path
 
 import numpy as np
 
@@ -50,18 +51,38 @@ async def test_cached():
 @pytest.mark.asyncio
 async def test_file_cached_wget():
     url = 'https://raw.githubusercontent.com/Rhobota/svs/main/logos/svs.png'
-    cache_location = '.remote_cache/2cff95e6fe5a3de0e7ff3270dae85f6c'
+    cache_location = Path('.remote_cache/2cff95e6fe5a3de0e7ff3270dae85f6c.png')
 
     if os.path.exists(cache_location):
         os.unlink(cache_location)
         assert not os.path.exists(cache_location)
 
-    data1 = await file_cached_wget(url)
-    assert len(data1) == 23123
+    path1 = await file_cached_wget(url)
+    assert path1 == cache_location
     assert os.path.exists(cache_location)
+    with open(path1, 'rb') as f:
+        data1 = f.read()
+    assert len(data1) == 23123
 
-    data2 = await file_cached_wget(url)
+    path2 = await file_cached_wget(url)
+    with open(path2, 'rb') as f:
+        data2 = f.read()
     assert data1 == data2
+
+
+@pytest.mark.asyncio
+async def test_file_cached_wget_delete_file_on_failure():
+    url = 'https://raw.githubusercontent.com/Rhobota/svs/main/logos/DOES_NOT_EXIST.png'
+    cache_location = Path('.remote_cache/33075fc51c44135e356dba7f05ff4c21.png')
+
+    if os.path.exists(cache_location):
+        os.unlink(cache_location)
+        assert not os.path.exists(cache_location)
+
+    with pytest.raises(Exception):
+        await file_cached_wget(url)
+
+    assert not os.path.exists(cache_location)  # <-- ensure the failed file wasn't partially written!
 
 
 def test_get_top_k():
