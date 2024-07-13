@@ -5,6 +5,8 @@ from collections import OrderedDict
 import functools
 import hashlib
 import os
+import gzip
+import shutil
 from urllib.parse import urlparse
 from pathlib import Path
 
@@ -136,6 +138,49 @@ async def file_cached_wget(url: str) -> Path:
             # We tried our best; nothing we can do now except log this.
             _LOG.exception(e2)
         raise e
+
+
+def _is_remote_or_local(local_path_or_remote_url: str) -> Tuple[bool, str]:
+    parsed_url = urlparse(local_path_or_remote_url)
+    if parsed_url.scheme in ('http', 'https'):
+        # The string is already a remote URL, so just return it.
+        return True, local_path_or_remote_url
+
+    if local_path_or_remote_url.startswith('file://'):
+        local_path = local_path_or_remote_url[7:]
+    else:
+        local_path = local_path_or_remote_url
+
+    return False, local_path
+
+
+async def resolve_to_local_uncompressed_file(local_path_or_remote_url: str) -> Path:
+    loop = asyncio.get_running_loop()
+
+    is_remote, local_path_or_remote_url = await loop.run_in_executor(None, _is_remote_or_local, local_path_or_remote_url)
+
+    if is_remote:
+        local_path = await file_cached_wget(local_path_or_remote_url)
+    else:
+        local_path = Path(local_path_or_remote_url)
+
+    base_name, extension = os.path.splitext(local_path)
+    base_name = Path(base_name)
+
+    if extension == '.gz':
+        def gunzip() -> None:
+            if os.path.exists(base_name):
+                if os.path.getmtime(base_name) >= os.path.getmtime(local_path):
+                    # The on-disk file is current!
+                    return
+            with gzip.open(local_path, 'rb') as from_f:
+                with open(base_name, 'wb') as to_f:
+                    shutil.copyfileobj(from_f, to_f)
+        await loop.run_in_executor(None, gunzip)
+        return base_name
+
+    else:
+        return local_path
 
 
 def get_top_k(scores: np.ndarray, top_k: int) -> List[Tuple[float, int]]:

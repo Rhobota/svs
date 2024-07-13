@@ -4,6 +4,7 @@ import sqlite3
 import json
 from datetime import datetime, timezone
 from threading import Thread
+from pathlib import Path
 
 from types import TracebackType
 from typing import (
@@ -27,7 +28,7 @@ from .types import (
     EmbeddingFunc, Retrieval,
 )
 
-from .util import chunkify, get_top_k
+from .util import chunkify, get_top_k, resolve_to_local_uncompressed_file
 
 import logging
 
@@ -494,7 +495,7 @@ class _Querier:
 
 
 class _DB:
-    def __init__(self, path: str):
+    def __init__(self, path: Union[Path, str]):
         self.conn: Union[sqlite3.Connection, None] = sqlite3.connect(
             path,
             isolation_level=None,     # <-- manual transactions
@@ -650,8 +651,9 @@ class AsyncKB:
 
     async def _ensure_db(self) -> _DB:
         if self.db is None:
+            local_path = await resolve_to_local_uncompressed_file(self.db_file_path)
             def heavy() -> _DB:
-                db = _DB(self.db_file_path)
+                db = _DB(local_path)
                 try:
                     self.embedding_func = _db_check(db, self.embedding_func)
                     return db
@@ -879,20 +881,23 @@ class KB:
         embedding_func: Optional[EmbeddingFunc] = None,
     ):
         self.db_file_path = db_file_path
-        self.db: Union[_DB, None] = _DB(db_file_path)
+        self.db: Union[_DB, None] = None
         self.embedding_func = embedding_func
         self.embedding_func_orig = embedding_func
         self.embeddings_matrix = _EmbeddingsMatrix()
-        try:
-            self.embedding_func = _db_check(self.db, self.embedding_func)
-        except:
-            self.db.close()
-            self.db = None
-            raise
+
         self.loop = asyncio.new_event_loop()
         self.thread: Union[Thread, None] = Thread(target=_loop_main, args=(self.loop,))
         self.thread.daemon = True
         self.thread.start()
+
+        local_path = asyncio.run_coroutine_threadsafe(resolve_to_local_uncompressed_file(self.db_file_path), self.loop).result()
+        self.db = _DB(local_path)
+        try:
+            self.embedding_func = _db_check(self.db, self.embedding_func)
+        except:
+            self.close()
+            raise
 
     def close(self, vacuum: bool = False) -> None:
         if self.thread is not None:
