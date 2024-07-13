@@ -646,10 +646,10 @@ class AsyncKB:
 
     def __init__(
         self,
-        db_file_path: str,
+        local_path_or_remote_url: str,
         embedding_func: Optional[EmbeddingFunc] = None,
     ):
-        self.db_file_path = db_file_path
+        self.local_path_or_remote_url = local_path_or_remote_url
         self.db: Union[_DB, None] = None
         self.db_lock = asyncio.Lock()
         self.embedding_func = embedding_func
@@ -658,7 +658,7 @@ class AsyncKB:
 
     async def _ensure_db(self) -> _DB:
         if self.db is None:
-            local_path = await resolve_to_local_uncompressed_file(self.db_file_path)
+            local_path = await resolve_to_local_uncompressed_file(self.local_path_or_remote_url)
             def heavy() -> _DB:
                 db = _DB(local_path)
                 try:
@@ -894,10 +894,10 @@ class KB:
 
     def __init__(
         self,
-        db_file_path: str,
+        local_path_or_remote_url: str,
         embedding_func: Optional[EmbeddingFunc] = None,
     ):
-        self.db_file_path = db_file_path
+        self.local_path_or_remote_url = local_path_or_remote_url
         self.db: Union[_DB, None] = None
         self.embedding_func = embedding_func
         self.embedding_func_orig = embedding_func
@@ -908,7 +908,7 @@ class KB:
         self.thread.daemon = True
         self.thread.start()
 
-        local_path = asyncio.run_coroutine_threadsafe(resolve_to_local_uncompressed_file(self.db_file_path), self.loop).result()
+        local_path = asyncio.run_coroutine_threadsafe(resolve_to_local_uncompressed_file(self.local_path_or_remote_url), self.loop).result()
         self.db = _DB(local_path)
         try:
             self.embedding_func = _db_check(self.db, self.embedding_func)
