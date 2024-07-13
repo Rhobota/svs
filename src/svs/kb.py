@@ -578,28 +578,35 @@ class _EmbeddingsMatrix:
         self.emb_id_lookup: Union[np.ndarray, None] = None
 
     def invalidate(self) -> None:
+        _LOG.info("invalidating cached vectors; they'll be re-built next time you `retrieve()`")
         self.embeddings_matrix = None
         self.emb_id_lookup = None
 
     def get_sync(self, db: _DB) -> Tuple[np.ndarray, np.ndarray]:
         if self.embeddings_matrix is not None and self.emb_id_lookup is not None:
+            _LOG.info("using cached vectors")
             return self.embeddings_matrix, self.emb_id_lookup
         else:
+            _LOG.info("re-building cached vectors...")
             with db as q:
                 embeddings_matrix, emb_id_lookup = q.build_embeddings_matrix()
+            _LOG.info("re-building cached vectors... DONE!")
             self.embeddings_matrix = embeddings_matrix
             self.emb_id_lookup = emb_id_lookup
             return embeddings_matrix, emb_id_lookup
 
     async def get(self, db: _DB) -> Tuple[np.ndarray, np.ndarray]:
         if self.embeddings_matrix is not None and self.emb_id_lookup is not None:
+            _LOG.info("using cached vectors")
             return self.embeddings_matrix, self.emb_id_lookup
         else:
+            _LOG.info("re-building cached vectors...")
             def heavy() -> Tuple[np.ndarray, np.ndarray]:
                 with db as q:
                     return q.build_embeddings_matrix()
             loop = asyncio.get_running_loop()
             embeddings_matrix, emb_id_lookup = await loop.run_in_executor(None, heavy)
+            _LOG.info("re-building cached vectors... DONE!")
             self.embeddings_matrix = embeddings_matrix
             self.emb_id_lookup = emb_id_lookup
             return embeddings_matrix, emb_id_lookup
@@ -732,9 +739,11 @@ class AsyncKB:
                             needs_embeddings.append((doc_id, text))
                         return doc_id
                 try:
+                    _LOG.info("starting bulk-add (as new database transaction)")
                     yield add_doc
                 finally:
                     in_context_manager = False
+                _LOG.info(f"getting {len(needs_embeddings)} document embeddings...")
                 for chunk in chunkify(needs_embeddings, _BULK_EMBEDDING_CHUNK_SIZE):
                     doc_ids = [c[0] for c in chunk]
                     texts = [c[1] for c in chunk]
@@ -743,7 +752,9 @@ class AsyncKB:
                         for doc_id, embedding in zip(doc_ids, embeddings):
                             q.set_doc_embedding(doc_id, embedding, skip_check_old=True)
                     await loop.run_in_executor(None, heavy)
+                _LOG.info(f"*DONE*: got {len(needs_embeddings)} document embeddings")
                 self.embeddings_matrix.invalidate()
+                _LOG.info("ending bulk-add (committing the database transaction)")
 
     @asynccontextmanager
     async def bulk_del_docs(
@@ -762,10 +773,12 @@ class AsyncKB:
                             return q.del_doc(doc_id)
                         await loop.run_in_executor(None, heavy)
                 try:
+                    _LOG.info("starting bulk-delete (as new database transaction)")
                     yield del_doc
                 finally:
                     in_context_manager = False
                 self.embeddings_matrix.invalidate()
+                _LOG.info("ending bulk-delete (committing the database transaction)")
 
     @asynccontextmanager
     async def bulk_query_docs(
@@ -837,12 +850,14 @@ class AsyncKB:
         n: int,
         include_documents: bool = True,
     ) -> List[Retrieval]:
+        _LOG.info(f"retrieving {n} documents with query string: {query}")
         loop = asyncio.get_running_loop()
         async with self.db_lock:
             db = await self._ensure_db()
             embeddings_matrix, emb_id_lookup = await self.embeddings_matrix.get(db)
         func = await self._get_embedding_func()
         query_vec = np.array((await func([query]))[0], dtype=np.float32)
+        _LOG.info("got embedding for query!")
         def superheavy() -> List[Tuple[float, int]]:
             x = np.dot(embeddings_matrix, query_vec)  # numpy go brrr
             emb_ids = []
@@ -850,6 +865,7 @@ class AsyncKB:
                 emb_ids.append((score, int(emb_id_lookup[index])))
             return emb_ids
         emb_ids = await loop.run_in_executor(None, superheavy)
+        _LOG.info(f"computed {embeddings_matrix.shape[0]} cosine similarities")
         async with self.db_lock:
             db = await self._ensure_db()
             async with db as q:
@@ -863,6 +879,7 @@ class AsyncKB:
                             'doc_id': doc_id,
                             'doc': doc,
                         })
+                    _LOG.info(f"retrieved top {n} documents")
                     return res
                 return await loop.run_in_executor(None, heavy)
 
@@ -957,16 +974,20 @@ class KB:
                     needs_embeddings.append((doc_id, text))
                 return doc_id
             try:
+                _LOG.info("starting bulk-add (as new database transaction)")
                 yield add_doc
             finally:
                 in_context_manager = False
+            _LOG.info(f"getting {len(needs_embeddings)} document embeddings...")
             for chunk in chunkify(needs_embeddings, _BULK_EMBEDDING_CHUNK_SIZE):
                 doc_ids = [c[0] for c in chunk]
                 texts = [c[1] for c in chunk]
                 embeddings = self._get_embeddings_as_bytes(texts)
                 for doc_id, embedding in zip(doc_ids, embeddings):
                     q.set_doc_embedding(doc_id, embedding, skip_check_old=True)
+            _LOG.info(f"*DONE*: got {len(needs_embeddings)} document embeddings")
             self.embeddings_matrix.invalidate()
+            _LOG.info("ending bulk-add (committing the database transaction)")
 
     @contextmanager
     def bulk_del_docs(
@@ -979,10 +1000,12 @@ class KB:
                 assert in_context_manager, "You may not call this function outside of the context manager!"
                 return q.del_doc(doc_id)
             try:
+                _LOG.info("starting bulk-delete (as new database transaction)")
                 yield del_doc
             finally:
                 in_context_manager = False
             self.embeddings_matrix.invalidate()
+            _LOG.info("ending bulk-delete (committing the database transaction)")
 
     @contextmanager
     def bulk_query_docs(
@@ -1042,11 +1065,13 @@ class KB:
         n: int,
         include_documents: bool = True,
     ) -> List[Retrieval]:
+        _LOG.info(f"retrieving {n} documents with query string: {query}")
         assert self.db is not None
         embeddings_matrix, emb_id_lookup = self.embeddings_matrix.get_sync(self.db)
         func = self._get_embedding_func()
         query_list_floats = asyncio.run_coroutine_threadsafe(func([query]), self.loop).result()[0]
         query_vec = np.array(query_list_floats, dtype=np.float32)
+        _LOG.info("got embedding for query!")
         def superheavy() -> List[Tuple[float, int]]:
             x = np.dot(embeddings_matrix, query_vec)  # numpy go brrr
             emb_ids = []
@@ -1054,6 +1079,7 @@ class KB:
                 emb_ids.append((score, int(emb_id_lookup[index])))
             return emb_ids
         emb_ids = superheavy()
+        _LOG.info(f"computed {embeddings_matrix.shape[0]} cosine similarities")
         with self.db as q:
             res: List[Retrieval] = []
             for score, emb_id in emb_ids:
@@ -1064,4 +1090,5 @@ class KB:
                     'doc_id': doc_id,
                     'doc': doc,
                 })
+            _LOG.info(f"retrieved top {n} documents")
             return res

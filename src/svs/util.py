@@ -125,8 +125,10 @@ async def file_cached_wget(url: str) -> Path:
                     await loop.run_in_executor(None, f.write, data)
         await loop.run_in_executor(None, f.close)
         closed = True
+        _LOG.info(f"file_cached_wget({repr(url)}): *get* complete!")
         return path
     except Exception as e:
+        _LOG.error(f"file_cached_wget({repr(url)}): *get* failed: {e}")
         try:
             # It's important we don't accidentally leave opened and/or
             # partially-written files!
@@ -168,14 +170,18 @@ async def resolve_to_local_uncompressed_file(local_path_or_remote_url: str) -> P
     base_name = Path(base_name)
 
     if extension == '.gz':
+        _LOG.info(f"resolve_to_local_uncompressed_file({repr(local_path_or_remote_url)}): found gzipped file")
         def gunzip() -> None:
             if os.path.exists(base_name):
                 if os.path.getmtime(base_name) >= os.path.getmtime(local_path):
                     # The on-disk file is current!
+                    _LOG.info(f"resolve_to_local_uncompressed_file({repr(local_path_or_remote_url)}): previously-gunzipped file is still fresh")
                     return
+            _LOG.info(f"resolve_to_local_uncompressed_file({repr(local_path_or_remote_url)}): starting gunzip...")
             with gzip.open(local_path, 'rb') as from_f:
                 with open(base_name, 'wb') as to_f:
                     shutil.copyfileobj(from_f, to_f)
+            _LOG.info(f"resolve_to_local_uncompressed_file({repr(local_path_or_remote_url)}): finished gunzip!")
         await loop.run_in_executor(None, gunzip)
         return base_name
 
