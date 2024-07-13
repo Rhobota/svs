@@ -1,7 +1,22 @@
 from .types import *
 
-# __all__ = [
-#    TODO
-# ]
+from .kb import (
+    KB,
+    AsyncKB,
+)
 
-__version__ = "0.1.0"
+from .embeddings import (
+    make_embeddings_func,
+    make_mock_embeddings_func,
+    make_openai_embeddings_func,
+)
+
+__all__ = [
+    'KB',
+    'AsyncKB',
+    'make_embeddings_func',
+    'make_mock_embeddings_func',
+    'make_openai_embeddings_func',
+]
+
+__version__ = "0.2.0"
