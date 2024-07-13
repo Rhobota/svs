@@ -59,11 +59,11 @@ def cached(
     are not run concurrently for the *same* input.
     """
     def decorator(wrapped: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
-        cache: OrderedDict[int, T] = OrderedDict()
-        events: Dict[int, asyncio.Event] = {}
+        cache: OrderedDict[Tuple, T] = OrderedDict()
+        events: Dict[Tuple, asyncio.Event] = {}
         @functools.wraps(wrapped)
         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            key = hash((args, tuple(sorted(kwargs.items()))))
+            key = (args, tuple(sorted(kwargs.items())))
             while True:
                 if key in cache:
                     _LOG.info(f"cached({key}): CACHE HIT")
@@ -105,7 +105,7 @@ async def file_cached_wget(url: str) -> Path:
     in the future...
     """
     loop = asyncio.get_running_loop()
-    hash = hashlib.md5(url.encode()).hexdigest()
+    hash = hashlib.sha256(url.encode()).hexdigest()
     extension = os.path.splitext(urlparse(url).path)[1]
     path = Path('.remote_cache') / Path(f'{hash}{extension}')
     def _check_exists() -> bool:

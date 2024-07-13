@@ -6,6 +6,8 @@ from pathlib import Path
 
 import numpy as np
 
+from typing import Tuple
+
 from svs.util import (
     locked,
     cached,
@@ -35,9 +37,9 @@ async def test_locked():
 @pytest.mark.asyncio
 async def test_cached():
     @cached()
-    async def _something(val: int) -> int:
+    async def _something(val: int) -> Tuple[int, int]:
         await asyncio.sleep(0.1)
-        return val + random.randint(0, 10000000)
+        return (val, random.randint(0, 10000000))
     res = await asyncio.gather(
         _something(2),
         _something(3),
@@ -46,12 +48,14 @@ async def test_cached():
     )
     assert res[0] == res[2]
     assert res[1] == res[3]
+    assert res[0] != res[1]
+    assert res[2] != res[3]
 
 
 @pytest.mark.asyncio
 async def test_file_cached_wget():
     url = 'https://raw.githubusercontent.com/Rhobota/svs/main/logos/svs.png'
-    cache_location = Path('.remote_cache/2cff95e6fe5a3de0e7ff3270dae85f6c.png')
+    cache_location = Path('.remote_cache/6f2b6fa2796868131b07d2d0d99719c96080d12f9c3d389042b966e7c7b5adf1.png')
 
     if os.path.exists(cache_location):
         os.unlink(cache_location)
@@ -73,7 +77,7 @@ async def test_file_cached_wget():
 @pytest.mark.asyncio
 async def test_file_cached_wget_delete_file_on_failure():
     url = 'https://raw.githubusercontent.com/Rhobota/svs/main/logos/DOES_NOT_EXIST.png'
-    cache_location = Path('.remote_cache/33075fc51c44135e356dba7f05ff4c21.png')
+    cache_location = Path('.remote_cache/f59da89b51463f4af62248f83bd938bb74867d045ff424bd052851604d0986ac.png')
 
     if os.path.exists(cache_location):
         os.unlink(cache_location)
