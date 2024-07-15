@@ -149,6 +149,20 @@ class _Querier:
         if res.rowcount == 0:
             raise KeyError(key)
 
+    def count_docs(self) -> int:
+        res = self.conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM docs;
+            """,
+            (),
+        )
+        row = res.fetchone()
+        assert row is not None
+        n = row[0]
+        assert isinstance(n, int)
+        return n
+
     def add_doc(
         self,
         text: str,
@@ -791,6 +805,13 @@ class AsyncKB:
                 in_context_manager = True
                 lock = asyncio.Lock()
                 class Querier(AsyncDocumentQuerier):
+                    async def count(self) -> int:
+                        assert in_context_manager, "You may not call this function outside of the context manager!"
+                        async with lock:
+                            def heavy() -> int:
+                                return q.count_docs()
+                            return await loop.run_in_executor(None, heavy)
+
                     async def query_doc(
                         self,
                         doc_id: DocumentId,
@@ -1015,6 +1036,10 @@ class KB:
         with self.db as q:
             in_context_manager = True
             class Querier(DocumentQuerier):
+                def count(self) -> int:
+                    assert in_context_manager, "You may not call this function outside of the context manager!"
+                    return q.count_docs()
+
                 def query_doc(
                     self,
                     doc_id: DocumentId,
@@ -1092,3 +1117,7 @@ class KB:
                 })
             _LOG.info(f"retrieved top {n} documents")
             return res
+
+    def __len__(self) -> int:
+        with self.bulk_query_docs() as q:
+            return q.count()

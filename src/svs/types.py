@@ -44,6 +44,9 @@ class AsyncDocumentDeleter(Protocol):
 
 class AsyncDocumentQuerier(abc.ABC):
     @abc.abstractmethod
+    async def count(self) -> int: ...
+
+    @abc.abstractmethod
     async def query_doc(
         self,
         doc_id: DocumentId,
@@ -86,6 +89,9 @@ class DocumentDeleter(Protocol):
 
 
 class DocumentQuerier(abc.ABC):
+    @abc.abstractmethod
+    def count(self) -> int: ...
+
     @abc.abstractmethod
     def query_doc(
         self,
