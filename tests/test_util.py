@@ -13,6 +13,7 @@ from svs.util import (
     cached,
     file_cached_wget,
     get_top_k,
+    get_top_pairs,
     chunkify,
 )
 
@@ -348,6 +349,76 @@ def test_get_top_k():
     s, i = top[2]
     assert s == 0.2
     assert i == 1
+
+
+def test_get_top_pairs():
+    with pytest.raises(AssertionError):
+        matrix = np.zeros((3, 2, 5))   # <-- not 2D
+        get_top_pairs(matrix, top_k=3)
+
+    with pytest.raises(AssertionError):
+        matrix = np.zeros((3, 2))   # <-- not square!
+        get_top_pairs(matrix, top_k=3)
+
+    matrix = np.zeros((0, 0))    # <-- 0x0 matrix
+    top = get_top_pairs(matrix, top_k=3)
+    assert len(top) == 0
+
+    matrix = np.array([[1]])   # <-- 1x1 matrix
+    top = get_top_pairs(matrix, top_k=3)
+    assert len(top) == 0
+
+    matrix = np.array([
+        [1, 2],
+        [9, 4],
+    ])
+    top = get_top_pairs(matrix, top_k=3)
+    assert len(top) == 1
+    s, i1, i2 = top[0]
+    assert s == 2
+    assert i1 == 0
+    assert i2 == 1
+
+    matrix = np.array([
+        [1, 2, 3],
+        [9, 5, 6],
+        [9, 9, 9],
+    ])
+    top = get_top_pairs(matrix, top_k=3)
+    assert len(top) == 3
+    s, i1, i2 = top[0]
+    assert s == 6
+    assert i1 == 1
+    assert i2 == 2
+    s, i1, i2 = top[1]
+    assert s == 3
+    assert i1 == 0
+    assert i2 == 2
+    s, i1, i2 = top[2]
+    assert s == 2
+    assert i1 == 0
+    assert i2 == 1
+
+    matrix = np.array([
+        [ 1,  2,  3,  4],
+        [20, 20,  7,  8],
+        [20, 20, 20, 12],
+        [20, 20, 20, 16],
+    ])
+    top = get_top_pairs(matrix, top_k=3)
+    assert len(top) == 3
+    s, i1, i2 = top[0]
+    assert s == 12
+    assert i1 == 2
+    assert i2 == 3
+    s, i1, i2 = top[1]
+    assert s == 8
+    assert i1 == 1
+    assert i2 == 3
+    s, i1, i2 = top[2]
+    assert s == 7
+    assert i1 == 1
+    assert i2 == 2
 
 
 def test_chunkify():

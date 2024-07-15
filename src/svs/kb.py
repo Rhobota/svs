@@ -28,7 +28,12 @@ from .types import (
     EmbeddingFunc, Retrieval,
 )
 
-from .util import chunkify, get_top_k, resolve_to_local_uncompressed_file
+from .util import (
+    chunkify,
+    get_top_k,
+    get_top_pairs,
+    resolve_to_local_uncompressed_file,
+)
 
 import logging
 
@@ -904,6 +909,43 @@ class AsyncKB:
                     return res
                 return await loop.run_in_executor(None, heavy)
 
+    async def document_top_pairwise_scores(
+        self,
+        n: int,
+    ) -> List[Tuple[float, DocumentRecord, DocumentRecord]]:
+        loop = asyncio.get_running_loop()
+        async with self.db_lock:
+            db = await self._ensure_db()
+            embeddings_matrix, emb_id_lookup = await self.embeddings_matrix.get(db)
+        n_docs = len(emb_id_lookup)
+        _LOG.info(f"computing pairwise similarity over {n_docs} documents")
+        def superheavy() -> List[Tuple[float, int, int]]:
+            pairwise = np.dot(embeddings_matrix, embeddings_matrix.T)
+            return [
+                (score, int(emb_id_lookup[i1]), int(emb_id_lookup[i2]))
+                for score, i1, i2 in get_top_pairs(pairwise, n)
+            ]
+        pairwise_scores = await loop.run_in_executor(None, superheavy)
+        _LOG.info(f"computed {n_docs * n_docs} pairwise cosine similarities")
+        async with self.db_lock:
+            db = await self._ensure_db()
+            async with db as q:
+                def heavy() -> List[Tuple[float, DocumentRecord, DocumentRecord]]:
+                    emb_id_to_doc_id: Dict[int, DocumentId] = {}
+                    for emb_id in set(emb_id for _, emb_id_1, emb_id_2 in pairwise_scores for emb_id in (emb_id_1, emb_id_2)):
+                        emb_id_to_doc_id[emb_id] = q.fetch_doc_with_emb_id(emb_id)
+                    doc_lookup: Dict[DocumentId, DocumentRecord] = {}
+                    for doc_id in emb_id_to_doc_id.values():
+                        doc_lookup[doc_id] = q.fetch_doc(doc_id, include_embedding=False)
+                    res: List[Tuple[float, DocumentRecord, DocumentRecord]] = []
+                    for score, emb_id_1, emb_id_2 in pairwise_scores:
+                        doc_1 = doc_lookup[emb_id_to_doc_id[emb_id_1]]
+                        doc_2 = doc_lookup[emb_id_to_doc_id[emb_id_2]]
+                        res.append((score, doc_1, doc_2))
+                    _LOG.info(f"retrieved top {n} document pairs")
+                    return res
+                return await loop.run_in_executor(None, heavy)
+
 
 def _loop_main(loop: asyncio.AbstractEventLoop) -> None:
     asyncio.set_event_loop(loop)
@@ -1116,6 +1158,37 @@ class KB:
                     'doc': doc,
                 })
             _LOG.info(f"retrieved top {n} documents")
+            return res
+
+    def document_top_pairwise_scores(
+        self,
+        n: int,
+    ) -> List[Tuple[float, DocumentRecord, DocumentRecord]]:
+        assert self.db is not None
+        embeddings_matrix, emb_id_lookup = self.embeddings_matrix.get_sync(self.db)
+        n_docs = len(emb_id_lookup)
+        _LOG.info(f"computing pairwise similarity over {n_docs} documents")
+        def superheavy() -> List[Tuple[float, int, int]]:
+            pairwise = np.dot(embeddings_matrix, embeddings_matrix.T)
+            return [
+                (score, int(emb_id_lookup[i1]), int(emb_id_lookup[i2]))
+                for score, i1, i2 in get_top_pairs(pairwise, n)
+            ]
+        pairwise_scores = superheavy()
+        _LOG.info(f"computed {n_docs * n_docs} pairwise cosine similarities")
+        with self.db as q:
+            emb_id_to_doc_id: Dict[int, DocumentId] = {}
+            for emb_id in set(emb_id for _, emb_id_1, emb_id_2 in pairwise_scores for emb_id in (emb_id_1, emb_id_2)):
+                emb_id_to_doc_id[emb_id] = q.fetch_doc_with_emb_id(emb_id)
+            doc_lookup: Dict[DocumentId, DocumentRecord] = {}
+            for doc_id in emb_id_to_doc_id.values():
+                doc_lookup[doc_id] = q.fetch_doc(doc_id, include_embedding=False)
+            res: List[Tuple[float, DocumentRecord, DocumentRecord]] = []
+            for score, emb_id_1, emb_id_2 in pairwise_scores:
+                doc_1 = doc_lookup[emb_id_to_doc_id[emb_id_1]]
+                doc_2 = doc_lookup[emb_id_to_doc_id[emb_id_2]]
+                res.append((score, doc_1, doc_2))
+            _LOG.info(f"retrieved top {n} document pairs")
             return res
 
     def __len__(self) -> int:
