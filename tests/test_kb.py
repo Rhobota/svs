@@ -25,10 +25,14 @@ _DB_PATH = './testdb.sqlite'
 
 @pytest.fixture(autouse=True)
 def clear_database():
-    if os.path.exists(_DB_PATH):
-        os.unlink(_DB_PATH)
-    assert not os.path.exists(_DB_PATH)
+    def clear():
+        if os.path.exists(_DB_PATH):
+            os.unlink(_DB_PATH)
+            assert not os.path.exists(_DB_PATH)
+
+    clear()
     yield
+    clear()
 
 
 def test_keyval_table():
