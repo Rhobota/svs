@@ -96,7 +96,7 @@ if __name__ == '__main__':
     demo()
 ```
 
-⚠️ **Want to see how that _Dad Jokes_ knowledge base was created?** See: [./examples/dad_jokes/Build Dad Jokes KB.ipynb](./examples/dad_jokes/Build Dad Jokes KB.ipynb)
+⚠️ **Want to see how that _Dad Jokes_ knowledge base was created?** See: [./examples/dad_jokes/Build Dad Jokes KB.ipynb](<./examples/dad_jokes/Build Dad Jokes KB.ipynb>)
 
 ## Debug Logging
 
