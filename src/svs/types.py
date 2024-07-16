@@ -24,8 +24,7 @@ class DocumentRecord(TypedDict):
 
 class Retrieval(TypedDict):
     score: float
-    doc_id: DocumentId
-    doc: Optional[DocumentRecord]
+    doc: DocumentRecord
 
 
 class AsyncDocumentAdder(Protocol):
@@ -43,6 +42,9 @@ class AsyncDocumentDeleter(Protocol):
 
 
 class AsyncDocumentQuerier(abc.ABC):
+    @abc.abstractmethod
+    async def count(self) -> int: ...
+
     @abc.abstractmethod
     async def query_doc(
         self,
@@ -86,6 +88,9 @@ class DocumentDeleter(Protocol):
 
 
 class DocumentQuerier(abc.ABC):
+    @abc.abstractmethod
+    def count(self) -> int: ...
+
     @abc.abstractmethod
     def query_doc(
         self,

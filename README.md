@@ -7,6 +7,10 @@
 ![Test Status](https://github.com/Rhobota/svs/actions/workflows/test.yml/badge.svg?branch=main)
 [![Downloads](https://static.pepy.tech/badge/svs)](https://pepy.tech/project/svs)
 
+- 🤔 What is SVS?
+  - Semantic search via deep-learning vector embeddings.
+  - A stupid-simple library for storing and retrieving your documents.
+
 - 💩 Why is it _stupid_?
   - Because it just uses [SQLite](https://www.sqlite.org/) and [NumPy](https://numpy.org/). Nothing fancy.
   - That is our core design choice. We want something _stupid simple_, yet _reasonably fast_.
@@ -51,7 +55,48 @@ SVS is used in production by:
 
 ## Quickstart
 
-TODO
+Here is the _most simple_ use-case; it just queries a pre-built knowledge base!
+This particular example queries a knowledge base of "Dad Jokes" 🤩.
+
+(taken from [./examples/quickstart.py](./examples/quickstart.py))
+
+```python
+import svs   # <-- pip install -U svs
+
+import os
+from dotenv import load_dotenv; load_dotenv()
+assert os.environ.get('OPENAI_API_KEY'), "You must set your OPENAI_API_KEY environment variable!"
+
+#
+# The database remembers which embeddings provider (e.g. OpenAI) was used.
+#
+# The "Dad Jokes" database below uses OpenAI embeddings, so that's why you had
+# to set your OPENAI_API_KEY above!
+#
+# NOTE: The first time you run this script it will download this database,
+#       so expect that to take a few seconds...
+#
+DB_URL = 'https://github.com/Rhobota/svs/raw/main/examples/dad_jokes/dad_jokes.sqlite.gz'
+
+
+def demo() -> None:
+    kb = svs.KB(DB_URL)
+
+    records = kb.retrieve('chicken', n = 10)
+
+    for record in records:
+        score = record['score']
+        text = record['doc']['text']
+        print(f" 😆 score={score:.4f}: {text}\n")
+
+    kb.close()
+
+
+if __name__ == '__main__':
+    demo()
+```
+
+⚠️ **Want to see how that _Dad Jokes_ knowledge base was created?** See: [./examples/dad_jokes/Build Dad Jokes KB.ipynb](<./examples/dad_jokes/Build Dad Jokes KB.ipynb>)
 
 ## Debug Logging
 

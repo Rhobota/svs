@@ -2,6 +2,7 @@ import pytest
 import asyncio
 import random
 import os
+import gzip
 from pathlib import Path
 
 import numpy as np
@@ -12,7 +13,9 @@ from svs.util import (
     locked,
     cached,
     file_cached_wget,
+    resolve_to_local_uncompressed_file,
     get_top_k,
+    get_top_pairs,
     chunkify,
 )
 
@@ -72,6 +75,24 @@ async def test_file_cached_wget():
     with open(path2, 'rb') as f:
         data2 = f.read()
     assert data1 == data2
+
+
+@pytest.mark.asyncio
+async def test_resolve_to_local_uncompressed_file():
+    filepath = './test.txt'
+    filepath_gz = f'{filepath}.gz'
+
+    with gzip.open(filepath_gz, 'wt') as f:
+        f.write('this is a test')
+
+    local = await resolve_to_local_uncompressed_file(filepath_gz)
+    assert local == Path(filepath)
+
+    with open(local, 'rt') as f:
+        assert f.read() == 'this is a test'
+
+    os.unlink(filepath)
+    os.unlink(filepath_gz)
 
 
 @pytest.mark.asyncio
@@ -348,6 +369,76 @@ def test_get_top_k():
     s, i = top[2]
     assert s == 0.2
     assert i == 1
+
+
+def test_get_top_pairs():
+    with pytest.raises(AssertionError):
+        matrix = np.zeros((3, 2, 5))   # <-- not 2D
+        get_top_pairs(matrix, top_k=3)
+
+    with pytest.raises(AssertionError):
+        matrix = np.zeros((3, 2))   # <-- not square!
+        get_top_pairs(matrix, top_k=3)
+
+    matrix = np.zeros((0, 0))    # <-- 0x0 matrix
+    top = get_top_pairs(matrix, top_k=3)
+    assert len(top) == 0
+
+    matrix = np.array([[1]])   # <-- 1x1 matrix
+    top = get_top_pairs(matrix, top_k=3)
+    assert len(top) == 0
+
+    matrix = np.array([
+        [1, 2],
+        [9, 4],
+    ])
+    top = get_top_pairs(matrix, top_k=3)
+    assert len(top) == 1
+    s, i1, i2 = top[0]
+    assert s == 2
+    assert i1 == 0
+    assert i2 == 1
+
+    matrix = np.array([
+        [1, 2, 3],
+        [9, 5, 6],
+        [9, 9, 9],
+    ])
+    top = get_top_pairs(matrix, top_k=3)
+    assert len(top) == 3
+    s, i1, i2 = top[0]
+    assert s == 6
+    assert i1 == 1
+    assert i2 == 2
+    s, i1, i2 = top[1]
+    assert s == 3
+    assert i1 == 0
+    assert i2 == 2
+    s, i1, i2 = top[2]
+    assert s == 2
+    assert i1 == 0
+    assert i2 == 1
+
+    matrix = np.array([
+        [ 1,  2,  3,  4],
+        [20, 20,  7,  8],
+        [20, 20, 20, 12],
+        [20, 20, 20, 16],
+    ])
+    top = get_top_pairs(matrix, top_k=3)
+    assert len(top) == 3
+    s, i1, i2 = top[0]
+    assert s == 12
+    assert i1 == 2
+    assert i2 == 3
+    s, i1, i2 = top[1]
+    assert s == 8
+    assert i1 == 1
+    assert i2 == 3
+    s, i1, i2 = top[2]
+    assert s == 7
+    assert i1 == 1
+    assert i2 == 2
 
 
 def test_chunkify():

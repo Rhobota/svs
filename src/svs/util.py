@@ -205,6 +205,36 @@ def get_top_k(scores: np.ndarray, top_k: int) -> List[Tuple[float, int]]:
     return sorted([(float(scores[i]), int(i)) for i in indices], reverse=True)
 
 
+def get_top_pairs(pairwise_scores_as_matrix: np.ndarray, top_k: int) -> List[Tuple[float, int, int]]:
+    """
+    As efficiently as possible, find the `top_k` scores in the matrix of
+    pairwise scores.
+
+    Returns a list of length `top_k` of tuples:
+      (score, row_index, column_index)
+
+    Note: Only the upper triangle of the matrix is used. The diagonal and
+          lower triangle are ignored.
+    """
+    assert len(pairwise_scores_as_matrix.shape) == 2
+    rows, cols = pairwise_scores_as_matrix.shape
+    assert rows == cols
+
+    indices = np.triu_indices_from(pairwise_scores_as_matrix, k=1)
+    vals = pairwise_scores_as_matrix[indices]
+
+    top = get_top_k(vals, top_k=top_k)
+
+    return [
+        (
+            score,
+            int(indices[0][index_index]),
+            int(indices[1][index_index]),
+        )
+        for score, index_index in top
+    ]
+
+
 def chunkify(seq: List[T], n: int) -> List[List[T]]:
     """Split `seq` into sublists of size `n`"""
     if n <= 0:
