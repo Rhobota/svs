@@ -24,8 +24,7 @@ class DocumentRecord(TypedDict):
 
 class Retrieval(TypedDict):
     score: float
-    doc_id: DocumentId
-    doc: Optional[DocumentRecord]
+    doc: DocumentRecord
 
 
 class AsyncDocumentAdder(Protocol):

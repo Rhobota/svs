@@ -874,7 +874,6 @@ class AsyncKB:
         self,
         query: str,
         n: int,
-        include_documents: bool = True,
     ) -> List[Retrieval]:
         _LOG.info(f"retrieving {n} documents with query string: {query}")
         loop = asyncio.get_running_loop()
@@ -899,10 +898,9 @@ class AsyncKB:
                     res: List[Retrieval] = []
                     for score, emb_id in emb_ids:
                         doc_id = q.fetch_doc_with_emb_id(emb_id)
-                        doc = q.fetch_doc(doc_id, include_embedding=False) if include_documents else None
+                        doc = q.fetch_doc(doc_id, include_embedding=False)
                         res.append({
                             'score': score,
-                            'doc_id': doc_id,
                             'doc': doc,
                         })
                     _LOG.info(f"retrieved top {n} documents")
@@ -1130,7 +1128,6 @@ class KB:
         self,
         query: str,
         n: int,
-        include_documents: bool = True,
     ) -> List[Retrieval]:
         _LOG.info(f"retrieving {n} documents with query string: {query}")
         assert self.db is not None
@@ -1151,10 +1148,9 @@ class KB:
             res: List[Retrieval] = []
             for score, emb_id in emb_ids:
                 doc_id = q.fetch_doc_with_emb_id(emb_id)
-                doc = q.fetch_doc(doc_id, include_embedding=False) if include_documents else None
+                doc = q.fetch_doc(doc_id, include_embedding=False)
                 res.append({
                     'score': score,
-                    'doc_id': doc_id,
                     'doc': doc,
                 })
             _LOG.info(f"retrieved top {n} documents")
