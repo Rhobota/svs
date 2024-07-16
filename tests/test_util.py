@@ -2,6 +2,7 @@ import pytest
 import asyncio
 import random
 import os
+import gzip
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +13,7 @@ from svs.util import (
     locked,
     cached,
     file_cached_wget,
+    resolve_to_local_uncompressed_file,
     get_top_k,
     get_top_pairs,
     chunkify,
@@ -73,6 +75,24 @@ async def test_file_cached_wget():
     with open(path2, 'rb') as f:
         data2 = f.read()
     assert data1 == data2
+
+
+@pytest.mark.asyncio
+async def test_resolve_to_local_uncompressed_file():
+    filepath = './test.txt'
+    filepath_gz = f'{filepath}.gz'
+
+    with gzip.open(filepath_gz, 'wt') as f:
+        f.write('this is a test')
+
+    local = await resolve_to_local_uncompressed_file(filepath_gz)
+    assert local == Path(filepath)
+
+    with open(local, 'rt') as f:
+        assert f.read() == 'this is a test'
+
+    os.unlink(filepath)
+    os.unlink(filepath_gz)
 
 
 @pytest.mark.asyncio
