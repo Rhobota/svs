@@ -140,6 +140,8 @@ def test_doc_table():
     # Open the database
     db = _DB(_DB_PATH)
     with db as q:
+        assert q.count_docs() == 0
+
         doc_a_id = q.add_doc(
             text      = 'first doc',
             parent_id = None,
@@ -179,6 +181,8 @@ def test_doc_table():
             embedding = None,
         )
         assert doc_e_id == 5
+
+        assert q.count_docs() == 5
 
         with pytest.raises(ValueError):
             q.add_doc(
@@ -376,6 +380,8 @@ def test_doc_table():
         q.del_doc(5)
         q.del_doc(4)
         q.del_doc(2)
+
+        assert q.count_docs() == 2
 
         with pytest.raises(KeyError):
             q.del_doc(88)
@@ -720,6 +726,7 @@ async def test_asynckb_add_del_doc():
     # Prev database; bulk query:
     kb = AsyncKB(_DB_PATH)
     async with kb.bulk_query_docs() as q:
+        assert (await q.count()) == 4
         assert (await q.query_doc(1)) == {
             'id': 1,
             'text': 'first doc',
@@ -829,7 +836,7 @@ async def test_asynckb_add_del_doc():
 
 
 @pytest.mark.asyncio
-async def test_asynckb_retrieve():
+async def test_asynckb_retrieve_et_al():
     async def embedding_func(list_of_texts: List[str]) -> List[List[float]]:
         ret: List[List[float]] = []
         for text in list_of_texts:
@@ -858,21 +865,37 @@ async def test_asynckb_retrieve():
 
     docs = await kb.retrieve('... first ...', n=3)
     assert len(docs) == 3
-    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'first doc'
-    assert docs[1]['doc'] and docs[1]['doc']['text'] == 'third doc'
-    assert docs[2]['doc'] and docs[2]['doc']['text'] == 'second doc'
+    assert docs[0]['doc']['text'] == 'first doc'
+    assert docs[1]['doc']['text'] == 'third doc'
+    assert docs[2]['doc']['text'] == 'second doc'
 
     docs = await kb.retrieve('... second ...', n=3)
     assert len(docs) == 3
-    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'second doc'
-    assert docs[1]['doc'] and docs[1]['doc']['text'] == 'first doc'
-    assert docs[2]['doc'] and docs[2]['doc']['text'] == 'third doc'
+    assert docs[0]['doc']['text'] == 'second doc'
+    assert docs[1]['doc']['text'] == 'first doc'
+    assert docs[2]['doc']['text'] == 'third doc'
 
     docs = await kb.retrieve('... third ...', n=3)
     assert len(docs) == 3
-    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'third doc'
-    assert docs[1]['doc'] and docs[1]['doc']['text'] == 'first doc'
-    assert docs[2]['doc'] and docs[2]['doc']['text'] == 'second doc'
+    assert docs[0]['doc']['text'] == 'third doc'
+    assert docs[1]['doc']['text'] == 'first doc'
+    assert docs[2]['doc']['text'] == 'second doc'
+
+    await kb.close()
+
+    # Pairwise scores:
+    kb = AsyncKB(_DB_PATH, embedding_func)
+
+    records = await kb.document_top_pairwise_scores(n = 2)
+    assert len(records) == 2
+
+    _, doc_1, doc_2 = records[0]
+    assert doc_1['id'] == 1
+    assert doc_2['id'] == 2
+
+    _, doc_1, doc_2 = records[1]
+    assert doc_1['id'] == 2
+    assert doc_2['id'] == 3
 
     await kb.close()
 
@@ -882,14 +905,14 @@ async def test_asynckb_retrieve():
 
     docs = await kb.retrieve('... forth ...', n=1)
     assert len(docs) == 1
-    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'first doc'
+    assert docs[0]['doc']['text'] == 'first doc'
 
     async with kb.bulk_add_docs() as add_doc:
         assert (await add_doc('forth doc')) == 4
 
     docs = await kb.retrieve('... forth ...', n=1)
     assert len(docs) == 1
-    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'forth doc'
+    assert docs[0]['doc']['text'] == 'forth doc'
 
     await kb.close()
 
@@ -899,7 +922,7 @@ async def test_asynckb_retrieve():
 
     docs = await kb.retrieve('... forth ...', n=1)
     assert len(docs) == 1
-    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'forth doc'
+    assert docs[0]['doc']['text'] == 'forth doc'
 
     async with kb.bulk_del_docs() as del_doc:
         await del_doc(1)
@@ -908,7 +931,7 @@ async def test_asynckb_retrieve():
 
     docs = await kb.retrieve('... forth ...', n=1)
     assert len(docs) == 1
-    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'second doc'
+    assert docs[0]['doc']['text'] == 'second doc'
 
     await kb.close()
 
@@ -1070,6 +1093,7 @@ def test_kb_add_del_doc():
     # Prev database; bulk query:
     kb = KB(_DB_PATH)
     with kb.bulk_query_docs() as q:
+        assert q.count() == 4
         assert q.query_doc(1) == {
             'id': 1,
             'text': 'first doc',
@@ -1178,7 +1202,7 @@ def test_kb_add_del_doc():
     db.close()
 
 
-def test_kb_retrieve():
+def test_kb_retrieve_et_al():
     async def embedding_func(list_of_texts: List[str]) -> List[List[float]]:
         ret: List[List[float]] = []
         for text in list_of_texts:
@@ -1207,21 +1231,37 @@ def test_kb_retrieve():
 
     docs = kb.retrieve('... first ...', n=3)
     assert len(docs) == 3
-    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'first doc'
-    assert docs[1]['doc'] and docs[1]['doc']['text'] == 'third doc'
-    assert docs[2]['doc'] and docs[2]['doc']['text'] == 'second doc'
+    assert docs[0]['doc']['text'] == 'first doc'
+    assert docs[1]['doc']['text'] == 'third doc'
+    assert docs[2]['doc']['text'] == 'second doc'
 
     docs = kb.retrieve('... second ...', n=3)
     assert len(docs) == 3
-    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'second doc'
-    assert docs[1]['doc'] and docs[1]['doc']['text'] == 'first doc'
-    assert docs[2]['doc'] and docs[2]['doc']['text'] == 'third doc'
+    assert docs[0]['doc']['text'] == 'second doc'
+    assert docs[1]['doc']['text'] == 'first doc'
+    assert docs[2]['doc']['text'] == 'third doc'
 
     docs = kb.retrieve('... third ...', n=3)
     assert len(docs) == 3
-    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'third doc'
-    assert docs[1]['doc'] and docs[1]['doc']['text'] == 'first doc'
-    assert docs[2]['doc'] and docs[2]['doc']['text'] == 'second doc'
+    assert docs[0]['doc']['text'] == 'third doc'
+    assert docs[1]['doc']['text'] == 'first doc'
+    assert docs[2]['doc']['text'] == 'second doc'
+
+    kb.close()
+
+    # Pairwise scores:
+    kb = KB(_DB_PATH, embedding_func)
+
+    records = kb.document_top_pairwise_scores(n = 2)
+    assert len(records) == 2
+
+    _, doc_1, doc_2 = records[0]
+    assert doc_1['id'] == 1
+    assert doc_2['id'] == 2
+
+    _, doc_1, doc_2 = records[1]
+    assert doc_1['id'] == 2
+    assert doc_2['id'] == 3
 
     kb.close()
 
@@ -1230,14 +1270,14 @@ def test_kb_retrieve():
 
     docs = kb.retrieve('... forth ...', n=1)
     assert len(docs) == 1
-    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'first doc'
+    assert docs[0]['doc']['text'] == 'first doc'
 
     with kb.bulk_add_docs() as add_doc:
         assert add_doc('forth doc') == 4
 
     docs = kb.retrieve('... forth ...', n=1)
     assert len(docs) == 1
-    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'forth doc'
+    assert docs[0]['doc']['text'] == 'forth doc'
 
     kb.close()
 
@@ -1246,7 +1286,7 @@ def test_kb_retrieve():
 
     docs = kb.retrieve('... forth ...', n=1)
     assert len(docs) == 1
-    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'forth doc'
+    assert docs[0]['doc']['text'] == 'forth doc'
 
     with kb.bulk_del_docs() as del_doc:
         del_doc(1)
@@ -1255,7 +1295,7 @@ def test_kb_retrieve():
 
     docs = kb.retrieve('... forth ...', n=1)
     assert len(docs) == 1
-    assert docs[0]['doc'] and docs[0]['doc']['text'] == 'second doc'
+    assert docs[0]['doc']['text'] == 'second doc'
 
     kb.close()
 
