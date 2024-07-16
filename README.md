@@ -7,6 +7,10 @@
 ![Test Status](https://github.com/Rhobota/svs/actions/workflows/test.yml/badge.svg?branch=main)
 [![Downloads](https://static.pepy.tech/badge/svs)](https://pepy.tech/project/svs)
 
+- 🤔 What is SVS?
+  - Semantic search via deep-learning vector embeddings.
+  - A stupid-simple library for storing and retrieving your documents.
+
 - 💩 Why is it _stupid_?
   - Because it just uses [SQLite](https://www.sqlite.org/) and [NumPy](https://numpy.org/). Nothing fancy.
   - That is our core design choice. We want something _stupid simple_, yet _reasonably fast_.

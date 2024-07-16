@@ -9,7 +9,7 @@ description = 'Stupid Vector Store (SVS): a vector database for the rest of us'
 readme = "README.md"
 requires-python = ">=3.8"
 license = "MIT"
-keywords = ["vector", "embeddings", "database", "store", "stupid"]
+keywords = ["vector", "embeddings", "database", "semantic", "search", "store", "stupid"]
 authors = [
   { name = "Ryan Henning", email = "ryan@rhobota.com" },
 ]
@@ -22,6 +22,18 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: Implementation :: CPython",
   "Programming Language :: Python :: Implementation :: PyPy",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Topic :: Database",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Text Processing :: Indexing",
+  "Topic :: Text Processing :: Linguistic",
+  "Typing :: Typed",
 ]
 dependencies = [
   "numpy",
