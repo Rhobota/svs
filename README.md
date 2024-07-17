@@ -45,7 +45,7 @@ If that's you, then SVS will probably be the simples (and _stupidest_) way to ma
 - [Installation](#installation)
 - [Used By](#used-by)
 - [Quickstart](#quickstart)
-- [Speed & Benchmarks](#speed-&-benchmarks)
+- [Speed & Benchmarks](#speed--benchmarks)
 - [Debug Logging](#debug-logging)
 - [License](#license)
 
@@ -108,21 +108,24 @@ if __name__ == '__main__':
 
 ## Speed & Benchmarks
 
-SQLite and NumPy are fast, thus SVS is fast 🏎️. Our goal is to minimize the amount of work done at the Python-layer.
+**SQLite** and **NumPy** are fast, thus **SVS** is fast 🏎️. Our goal is to minimize the amount of work done at the Python-layer.
 
-Also, your bottleneck will *likely* be the remote API calls to get document embeddings (e.g. calling out to OpenAI to get embeddings will be the _slowest_ thing), so it's likely not critical to further optimize the Python-layer bits.
+Also, your bottleneck will *certainly* be the remote API calls to get document embeddings (e.g. calling out to OpenAI's API to get embeddings will be the _slowest_ thing), so it's likely not critical to further optimize the Python-layer bits.
 
 The following benchmarks were performed on 2018-era commodity hardware (Intel i3-8100):
 
-| Dataset Size (# of documents)   | Load into SQLite | Obtain Embeddings (remote API call) | Compute Cosine Similarity + Sort + Retrieve Top-100 Documents § |
-| ------------------------------- | ---------------- | ----------------------------------- | --------------------------------------------------------------- |
-| 10,548 short jokes †            | 0.07 seconds     | 80 seconds                          | 0.5 seconds (first query) + 0.011 seconds (subsequent queries)  |
-| 1,000,000 synthetic documents ‡ | 8 seconds        | 2 hours ¶                           | 2 minutes (first query) + 0.24 seconds (subsequent queries)     |
+| Number of Documents                | Load into SQLite | Get Embeddings for All Documents (remote API call) | Cosine Similarity + Sort + Retrieve Top-100 Documents [^3]     |
+| ---------------------------------- | ---------------- | -------------------------------------------------- | -------------------------------------------------------------- |
+| 10,548 jokes [^1]                  | 0.07 seconds     | 80 seconds                                         | 0.5 seconds (first query) + 0.011 seconds (subsequent queries) |
+| 1,000,000 synthetic documents [^2] | 8 seconds        | 2 hours [^4]                                       | 2 minutes (first query) + 0.24 seconds (subsequent queries)    |
 
-† Dad jokes database from [this notebook](<./examples/dad_jokes/Build Dad Jokes KB.ipynb>)  
-‡ these one million synthetic documents have an average length of 1,200 characters, see [this notebook](<./examples/One Million Documents Benchmark.ipynb>)  
-§ this time does _not_ include the time it takes to obtain the query string's embedding from the external service (i.e. from OpenAI); rather, it includes the time it takes to compute the cosine similarity with the query string and _all_ the documents (where embedding dimensionality is 1,536), then sort those results, and then retrieve the top-100 documents from the database; the first query is slow because it must load the vectors from disk into RAM; subsequent queries are _fast_ since those vectors stay cached in RAM  
-¶ this is an estimate based on typical response times from OpenAI's embeddings API; for this test, we generate synthetic embeddings with dimensionality 1,536 to simulate the correct datasize and computation requirements
+[^1]: Dad jokes database from [this notebook](<./examples/dad_jokes/Build Dad Jokes KB.ipynb>)
+
+[^2] these one million synthetic documents have an average length of 1,200 characters, see [this notebook](<./examples/One Million Documents Benchmark.ipynb>)
+
+[^3] this time does _not_ include the time it takes to obtain the query string's embedding from the external service (i.e. from OpenAI); rather, it includes the time it takes to compute the cosine similarity with the query string and _all_ the documents (where embedding dimensionality is 1,536), then sort those results, and then retrieve the top-100 documents from the database; the first query is slow because it must load the vectors from disk into RAM; subsequent queries are _fast_ since those vectors stay cached in RAM
+
+[^4] this is an estimate based on typical response times from OpenAI's embeddings API; for this test, we generate synthetic embeddings with dimensionality 1,536 to simulate the correct datasize and computation requirements
 
 ## Debug Logging
 
