@@ -121,11 +121,11 @@ The following benchmarks were performed on 2018-era commodity hardware (Intel i3
 
 [^1]: Dad jokes database from [this notebook](<./examples/dad_jokes/Build Dad Jokes KB.ipynb>)
 
-[^2] these one million synthetic documents have an average length of 1,200 characters, see [this notebook](<./examples/One Million Documents Benchmark.ipynb>)
+[^2]: these one million synthetic documents have an average length of 1,200 characters, see [this notebook](<./examples/One Million Documents Benchmark.ipynb>)
 
-[^3] this time does _not_ include the time it takes to obtain the query string's embedding from the external service (i.e. from OpenAI); rather, it includes the time it takes to compute the cosine similarity with the query string and _all_ the documents (where embedding dimensionality is 1,536), then sort those results, and then retrieve the top-100 documents from the database; the first query is slow because it must load the vectors from disk into RAM; subsequent queries are _fast_ since those vectors stay cached in RAM
+[^3]: this time does _not_ include the time it takes to obtain the query string's embedding from the external service (i.e. from OpenAI); rather, it includes the time it takes to compute the cosine similarity with the query string and _all_ the documents (where embedding dimensionality is 1,536), then sort those results, and then retrieve the top-100 documents from the database; the first query is slow because it must load the vectors from disk into RAM; subsequent queries are _fast_ since those vectors stay cached in RAM
 
-[^4] this is an estimate based on typical response times from OpenAI's embeddings API; for this test, we generate synthetic embeddings with dimensionality 1,536 to simulate the correct datasize and computation requirements
+[^4]: this is an estimate based on typical response times from OpenAI's embeddings API; for this test, we generate synthetic embeddings with dimensionality 1,536 to simulate the correct datasize and computation requirements
 
 ## Debug Logging
 
