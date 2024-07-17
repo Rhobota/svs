@@ -118,11 +118,10 @@ def wrap_embeddings_func_check_magnitude(
         list_of_strings: List[str],
     ) -> List[List[float]]:
         vectors = await embedding_func(list_of_strings)
-        for vector in vectors:
-            v = np.array(vector)
-            mag = np.sqrt(v.dot(v))
-            if np.abs(mag - 1.0) > tolerance:
-                raise ValueError(f"embedding magnitude out of spec: {mag:.8f}")
+        vectors_np = np.array(vectors, dtype=np.float32)
+        mags = np.sqrt((vectors_np * vectors_np).sum(axis=1))
+        if (np.abs(mags - 1.0) > tolerance).any():
+            raise ValueError("embedding magnitude out of spec")
         return vectors
 
     return wrapped
