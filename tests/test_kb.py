@@ -838,6 +838,21 @@ async def test_asynckb_add_del_doc():
         ]
     db.close()
 
+    # Prev database; check that `force_fresh_db` works.
+    kb = AsyncKB(_DB_PATH, make_mock_embeddings_func(), force_fresh_db=True)
+    await kb.load()
+    await kb.close()
+
+    # Check the database (it should be empty now from the `force_fresh_db` above):
+    db = _DB(_DB_PATH)
+    with db as q:
+        assert json.loads(q.get_key('embedding_func_params')) == {
+            'provider': 'mock',
+        }
+        assert q._debug_embeddings() == []
+        assert q._debug_docs() == []
+    db.close()
+
 
 @pytest.mark.asyncio
 async def test_asynckb_retrieve_et_al():
@@ -1203,6 +1218,20 @@ def test_kb_add_del_doc():
             (1, None, 0, 'first doc', 1, None),
             (3, 1, 1, 'third doc', None, None),
         ]
+    db.close()
+
+    # Prev database; check that `force_fresh_db` works.
+    kb = KB(_DB_PATH, make_mock_embeddings_func(), force_fresh_db=True)
+    kb.close()
+
+    # Check the database (it should be empty now from the `force_fresh_db` above):
+    db = _DB(_DB_PATH)
+    with db as q:
+        assert json.loads(q.get_key('embedding_func_params')) == {
+            'provider': 'mock',
+        }
+        assert q._debug_embeddings() == []
+        assert q._debug_docs() == []
     db.close()
 
 
