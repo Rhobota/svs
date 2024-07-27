@@ -33,6 +33,7 @@ from .util import (
     get_top_k,
     get_top_pairs,
     resolve_to_local_uncompressed_file,
+    delete_file_if_exists,
 )
 
 import logging
@@ -667,6 +668,7 @@ class AsyncKB:
         self,
         local_path_or_remote_url: str,
         embedding_func: Optional[EmbeddingFunc] = None,
+        force_fresh_db: bool = False
     ):
         self.local_path_or_remote_url = local_path_or_remote_url
         self.db: Union[_DB, None] = None
@@ -674,11 +676,14 @@ class AsyncKB:
         self.embedding_func = embedding_func
         self.embedding_func_orig = embedding_func
         self.embeddings_matrix = _EmbeddingsMatrix()
+        self.force_fresh_db = force_fresh_db
 
     async def _ensure_db(self) -> _DB:
         if self.db is None:
             local_path = await resolve_to_local_uncompressed_file(self.local_path_or_remote_url)
             def heavy() -> _DB:
+                if self.force_fresh_db:
+                    delete_file_if_exists(local_path)
                 db = _DB(local_path)
                 try:
                     self.embedding_func = _db_check(db, self.embedding_func)
@@ -957,6 +962,7 @@ class KB:
         self,
         local_path_or_remote_url: str,
         embedding_func: Optional[EmbeddingFunc] = None,
+        force_fresh_db: bool = False
     ):
         self.local_path_or_remote_url = local_path_or_remote_url
         self.db: Union[_DB, None] = None
@@ -970,6 +976,8 @@ class KB:
         self.thread.start()
 
         local_path = asyncio.run_coroutine_threadsafe(resolve_to_local_uncompressed_file(self.local_path_or_remote_url), self.loop).result()
+        if force_fresh_db:
+            delete_file_if_exists(local_path)
         self.db = _DB(local_path)
         try:
             self.embedding_func = _db_check(self.db, self.embedding_func)

@@ -5,6 +5,7 @@ from collections import OrderedDict
 import functools
 import hashlib
 import os
+import errno
 import gzip
 import shutil
 from urllib.parse import urlparse
@@ -240,3 +241,11 @@ def chunkify(seq: List[T], n: int) -> List[List[T]]:
     if n <= 0:
         raise ValueError('n must be positive')
     return [seq[i * n:(i + 1) * n] for i in range((len(seq) + n - 1) // n)]
+
+
+def delete_file_if_exists(filename: Union[str, Path]) -> None:
+    try:
+        os.remove(filename)
+    except OSError as e:
+        if e.errno != errno.ENOENT:
+            raise
