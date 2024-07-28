@@ -7,6 +7,8 @@ import numpy as np
 
 from typing import List, Optional, Dict, Any
 
+from .util import cached
+
 from .types import EmbeddingFunc
 
 
@@ -89,9 +91,7 @@ def make_openai_embeddings_func(
         if user is not None:
             payload['user'] = user
 
-        async with aiohttp.ClientSession(raise_for_status=True) as session:
-            async with session.post(url, headers=headers, json=payload) as response:
-                results = await response.json()
+        results = await _cached_openai_embeddings_endpoint(url, headers, payload)
 
         embeddings: List[List[float]] = []
         for i, d in enumerate(results['data']):
@@ -107,6 +107,17 @@ def make_openai_embeddings_func(
     setattr(openai_embeddings, '__embedding_func_params__', params)
 
     return openai_embeddings
+
+
+@cached(maxsize=1000)
+async def _cached_openai_embeddings_endpoint(
+    url: str,
+    headers: Any,
+    payload: Any,
+) -> Any:
+    async with aiohttp.ClientSession(raise_for_status=True) as session:
+        async with session.post(url, headers=headers, json=payload) as response:
+            return await response.json()
 
 
 def wrap_embeddings_func_check_magnitude(
