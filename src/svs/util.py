@@ -65,19 +65,20 @@ def cached(
         @functools.wraps(wrapped)
         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             key = (args, tuple(sorted(kwargs.items())))
+            key_hash = hash(key)  # <-- just used for logging, not used as the key (important!)
             while True:
                 if key in cache:
-                    _LOG.info(f"cached({key}): CACHE HIT")
+                    _LOG.debug(f"cached({key_hash}): CACHE HIT")
                     cache.move_to_end(key)
                     return cache[key]
                 if key in events:
                     event = events[key]
-                    _LOG.info(f"cached({key}): avoiding concurrency")
+                    _LOG.debug(f"cached({key_hash}): avoiding concurrency")
                     await event.wait()
                 else:
                     event = asyncio.Event()
                     events[key] = event
-                    _LOG.info(f"cached({key}): cache miss ... will compute")
+                    _LOG.debug(f"cached({key_hash}): cache miss ... will compute")
                     try:
                         res = await wrapped(*args, **kwargs)
                         cache[key] = res
