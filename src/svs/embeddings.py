@@ -76,22 +76,13 @@ def make_openai_embeddings_func(
         for s in list_of_strings:
             assert isinstance(s, str)
 
-        url = 'https://api.openai.com/v1/embeddings'
-
-        headers: Dict[str, Any] = {
-            'Authorization': f'Bearer {api_key}',
-        }
-        payload: Dict[str, Any] = {
-            'input': list_of_strings,
-            'model': model,
-            'encoding_format': 'float',
-        }
-        if dimensions is not None:
-            payload['dimensions'] = dimensions
-        if user is not None:
-            payload['user'] = user
-
-        results = await _cached_openai_embeddings_endpoint(url, headers, payload)
+        results = await _cached_openai_embeddings_endpoint(
+            api_key,
+            list_of_strings,
+            model,
+            dimensions,
+            user,
+        )
 
         embeddings: List[List[float]] = []
         for i, d in enumerate(results['data']):
@@ -111,10 +102,27 @@ def make_openai_embeddings_func(
 
 @cached(maxsize=1000)
 async def _cached_openai_embeddings_endpoint(
-    url: str,
-    headers: Any,
-    payload: Any,
+    api_key: Optional[str],
+    list_of_strings: List[str],
+    model: str,
+    dimensions: Optional[int],
+    user: Optional[str],
 ) -> Any:
+    url = 'https://api.openai.com/v1/embeddings'
+
+    headers: Dict[str, Any] = {
+        'Authorization': f'Bearer {api_key}',
+    }
+    payload: Dict[str, Any] = {
+        'input': list_of_strings,
+        'model': model,
+        'encoding_format': 'float',
+    }
+    if dimensions is not None:
+        payload['dimensions'] = dimensions
+    if user is not None:
+        payload['user'] = user
+
     async with aiohttp.ClientSession(raise_for_status=True) as session:
         async with session.post(url, headers=headers, json=payload) as response:
             return await response.json()
