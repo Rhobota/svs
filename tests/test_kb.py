@@ -2,6 +2,7 @@ import pytest
 
 import os
 import json
+import gzip
 
 import numpy as np
 
@@ -18,6 +19,8 @@ from svs.kb import (
     _DB,
     SQLITE_IS_STRICT,
 )
+
+from svs.util import delete_file_if_exists
 
 
 _DB_PATH = './testdb.sqlite'
@@ -646,6 +649,21 @@ async def test_asynckb_init_and_close():
         assert q.get_key('schema_version') == 1
     db.close()
 
+    # Prev database; check that `also_gzip` works.
+    gz_path = f'{_DB_PATH}.gz'
+    delete_file_if_exists(gz_path)
+    assert not os.path.exists(gz_path)
+    kb = AsyncKB(_DB_PATH)
+    await kb.load()
+    assert kb.embedding_func.__name__ == 'mock_embeddings'  # type: ignore
+    await kb.close(also_gzip=True)
+    assert os.path.exists(gz_path)
+    with gzip.open(gz_path, 'rb') as f:
+        content1 = f.read()
+    with open(_DB_PATH, 'rb') as f:
+        content2 = f.read()
+    assert content1 == content2
+
 
 @pytest.mark.asyncio
 async def test_asynckb_add_del_doc():
@@ -1028,6 +1046,20 @@ def test_kb_init_and_close():
         }
         assert q.get_key('schema_version') == 1
     db.close()
+
+    # Prev database; check that `also_gzip` works.
+    gz_path = f'{_DB_PATH}.gz'
+    delete_file_if_exists(gz_path)
+    assert not os.path.exists(gz_path)
+    kb = KB(_DB_PATH)
+    assert kb.embedding_func.__name__ == 'mock_embeddings'  # type: ignore
+    kb.close(also_gzip=True)
+    assert os.path.exists(gz_path)
+    with gzip.open(gz_path, 'rb') as f:
+        content1 = f.read()
+    with open(_DB_PATH, 'rb') as f:
+        content2 = f.read()
+    assert content1 == content2
 
 
 def test_kb_add_del_doc():
