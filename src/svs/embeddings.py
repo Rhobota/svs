@@ -5,11 +5,14 @@ import functools
 
 import numpy as np
 
-from typing import List, Optional, Dict, Any
+from typing import List, Tuple, Optional, Dict, Any
 
 from .util import cached
 
 from .types import EmbeddingFunc
+
+
+OPENAI_EMBEDDINGS_MAX_CACHE_SIZE = int(os.environ.get('OPENAI_EMBEDDINGS_MAX_CACHE_SIZE', 100))
 
 
 def embedding_to_bytes(embedding: List[float]) -> bytes:
@@ -78,7 +81,7 @@ def make_openai_embeddings_func(
 
         results = await _cached_openai_embeddings_endpoint(
             api_key,
-            list_of_strings,
+            tuple(list_of_strings),
             model,
             dimensions,
             user,
@@ -100,10 +103,10 @@ def make_openai_embeddings_func(
     return openai_embeddings
 
 
-@cached(maxsize=1000)
+@cached(maxsize=OPENAI_EMBEDDINGS_MAX_CACHE_SIZE)
 async def _cached_openai_embeddings_endpoint(
     api_key: Optional[str],
-    list_of_strings: List[str],
+    tuple_of_strings: Tuple,
     model: str,
     dimensions: Optional[int],
     user: Optional[str],
@@ -114,7 +117,7 @@ async def _cached_openai_embeddings_endpoint(
         'Authorization': f'Bearer {api_key}',
     }
     payload: Dict[str, Any] = {
-        'input': list_of_strings,
+        'input': list(tuple_of_strings),
         'model': model,
         'encoding_format': 'float',
     }
