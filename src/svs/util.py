@@ -244,6 +244,14 @@ def chunkify(seq: List[T], n: int) -> List[List[T]]:
 
 
 def delete_file_if_exists(filename: Union[str, Path]) -> None:
+    """
+    Delete a file **if** it exists, without raising an error in the case
+    that it does *not* exist.
+
+    Note: The try/except method below is more correct than the
+          `if os.path.exists ... os.remove` method, because the
+          latter has a race condition issue.
+    """
     try:
         os.remove(filename)
     except OSError as e:

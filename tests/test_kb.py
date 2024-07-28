@@ -29,9 +29,8 @@ _DB_PATH = './testdb.sqlite'
 @pytest.fixture(autouse=True)
 def clear_database():
     def clear():
-        if os.path.exists(_DB_PATH):
-            os.unlink(_DB_PATH)
-            assert not os.path.exists(_DB_PATH)
+        delete_file_if_exists(_DB_PATH)
+        delete_file_if_exists(f'{_DB_PATH}.gz')
 
     clear()
     yield
