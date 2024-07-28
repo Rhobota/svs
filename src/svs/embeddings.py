@@ -5,9 +5,14 @@ import functools
 
 import numpy as np
 
-from typing import List, Optional, Dict, Any
+from typing import List, Tuple, Optional, Dict, Any
+
+from .util import cached
 
 from .types import EmbeddingFunc
+
+
+OPENAI_EMBEDDINGS_MAX_CACHE_SIZE = int(os.environ.get('OPENAI_EMBEDDINGS_MAX_CACHE_SIZE', 100))
 
 
 def embedding_to_bytes(embedding: List[float]) -> bytes:
@@ -74,24 +79,13 @@ def make_openai_embeddings_func(
         for s in list_of_strings:
             assert isinstance(s, str)
 
-        url = 'https://api.openai.com/v1/embeddings'
-
-        headers: Dict[str, Any] = {
-            'Authorization': f'Bearer {api_key}',
-        }
-        payload: Dict[str, Any] = {
-            'input': list_of_strings,
-            'model': model,
-            'encoding_format': 'float',
-        }
-        if dimensions is not None:
-            payload['dimensions'] = dimensions
-        if user is not None:
-            payload['user'] = user
-
-        async with aiohttp.ClientSession(raise_for_status=True) as session:
-            async with session.post(url, headers=headers, json=payload) as response:
-                results = await response.json()
+        results = await _cached_openai_embeddings_endpoint(
+            api_key,
+            tuple(list_of_strings),
+            model,
+            dimensions,
+            user,
+        )
 
         embeddings: List[List[float]] = []
         for i, d in enumerate(results['data']):
@@ -107,6 +101,34 @@ def make_openai_embeddings_func(
     setattr(openai_embeddings, '__embedding_func_params__', params)
 
     return openai_embeddings
+
+
+@cached(maxsize=OPENAI_EMBEDDINGS_MAX_CACHE_SIZE)
+async def _cached_openai_embeddings_endpoint(
+    api_key: Optional[str],
+    tuple_of_strings: Tuple,
+    model: str,
+    dimensions: Optional[int],
+    user: Optional[str],
+) -> Any:
+    url = 'https://api.openai.com/v1/embeddings'
+
+    headers: Dict[str, Any] = {
+        'Authorization': f'Bearer {api_key}',
+    }
+    payload: Dict[str, Any] = {
+        'input': list(tuple_of_strings),
+        'model': model,
+        'encoding_format': 'float',
+    }
+    if dimensions is not None:
+        payload['dimensions'] = dimensions
+    if user is not None:
+        payload['user'] = user
+
+    async with aiohttp.ClientSession(raise_for_status=True) as session:
+        async with session.post(url, headers=headers, json=payload) as response:
+            return await response.json()
 
 
 def wrap_embeddings_func_check_magnitude(

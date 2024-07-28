@@ -2,6 +2,8 @@ import asyncio
 from contextlib import contextmanager, asynccontextmanager
 import sqlite3
 import json
+import gzip
+import shutil
 from datetime import datetime, timezone
 from threading import Thread
 from pathlib import Path
@@ -33,6 +35,7 @@ from .util import (
     get_top_k,
     get_top_pairs,
     resolve_to_local_uncompressed_file,
+    delete_file_if_exists,
 )
 
 import logging
@@ -521,6 +524,7 @@ class _DB:
             check_same_thread=False,  # <-- see ref [1]
         )
         self.in_transaction = False
+        self.path = path
         try:
             self.conn.cursor().executescript(_TABLE_DEFS)
             self.conn.commit()
@@ -667,6 +671,7 @@ class AsyncKB:
         self,
         local_path_or_remote_url: str,
         embedding_func: Optional[EmbeddingFunc] = None,
+        force_fresh_db: bool = False
     ):
         self.local_path_or_remote_url = local_path_or_remote_url
         self.db: Union[_DB, None] = None
@@ -674,11 +679,14 @@ class AsyncKB:
         self.embedding_func = embedding_func
         self.embedding_func_orig = embedding_func
         self.embeddings_matrix = _EmbeddingsMatrix()
+        self.force_fresh_db = force_fresh_db
 
     async def _ensure_db(self) -> _DB:
         if self.db is None:
             local_path = await resolve_to_local_uncompressed_file(self.local_path_or_remote_url)
             def heavy() -> _DB:
+                if self.force_fresh_db:
+                    delete_file_if_exists(local_path)
                 db = _DB(local_path)
                 try:
                     self.embedding_func = _db_check(db, self.embedding_func)
@@ -695,17 +703,31 @@ class AsyncKB:
             db = await self._ensure_db()
             await self.embeddings_matrix.get(db)
 
-    async def close(self, vacuum: bool = False) -> None:
+    async def close(
+        self,
+        vacuum: bool = False,
+        also_gzip: bool = False,
+    ) -> None:
         async with self.db_lock:
             db = await self._ensure_db()
-            def heavy() -> None:
+            def heavy() -> Union[Path, str]:
                 if vacuum:
                     db.vacuum()
                 db.close()
-            await asyncio.get_running_loop().run_in_executor(None, heavy)
+                return db.path
+            path = await asyncio.get_running_loop().run_in_executor(None, heavy)
             self.db = None
             self.embedding_func = self.embedding_func_orig
             self.embeddings_matrix.invalidate()
+            if also_gzip:
+                def heavy2() -> None:
+                    _LOG.info(f"AsyncKB.close(): starting gzip...")
+                    dest_path = f'{path}.gz'
+                    with open(path, 'rb') as from_f:
+                        with gzip.open(dest_path, 'wb') as to_f:
+                            shutil.copyfileobj(from_f, to_f)
+                    _LOG.info(f"AsyncKB.close(): finished gzip: {dest_path}")
+                await asyncio.get_running_loop().run_in_executor(None, heavy2)
 
     async def _get_embedding_func(self) -> EmbeddingFunc:
         assert self.embedding_func   # <-- in all places this is called, the db has been loaded already
@@ -957,6 +979,7 @@ class KB:
         self,
         local_path_or_remote_url: str,
         embedding_func: Optional[EmbeddingFunc] = None,
+        force_fresh_db: bool = False
     ):
         self.local_path_or_remote_url = local_path_or_remote_url
         self.db: Union[_DB, None] = None
@@ -970,6 +993,8 @@ class KB:
         self.thread.start()
 
         local_path = asyncio.run_coroutine_threadsafe(resolve_to_local_uncompressed_file(self.local_path_or_remote_url), self.loop).result()
+        if force_fresh_db:
+            delete_file_if_exists(local_path)
         self.db = _DB(local_path)
         try:
             self.embedding_func = _db_check(self.db, self.embedding_func)
@@ -977,7 +1002,11 @@ class KB:
             self.close()
             raise
 
-    def close(self, vacuum: bool = False) -> None:
+    def close(
+        self,
+        vacuum: bool = False,
+        also_gzip: bool = False,
+    ) -> None:
         if self.thread is not None:
             async def _stop() -> None:
                 self.loop.stop()
@@ -988,9 +1017,17 @@ class KB:
             if vacuum:
                 self.db.vacuum()
             self.db.close()
+            path = self.db.path
             self.db = None
             self.embedding_func = self.embedding_func_orig
             self.embeddings_matrix.invalidate()
+            if also_gzip:
+                _LOG.info(f"KB.close(): starting gzip...")
+                dest_path = f'{path}.gz'
+                with open(path, 'rb') as from_f:
+                    with gzip.open(dest_path, 'wb') as to_f:
+                        shutil.copyfileobj(from_f, to_f)
+                _LOG.info(f"KB.close(): finished gzip: {dest_path}")
 
     def _get_embedding_func(self) -> EmbeddingFunc:
         assert self.embedding_func   # <-- true if we haven't closed

@@ -5,6 +5,7 @@ from collections import OrderedDict
 import functools
 import hashlib
 import os
+import errno
 import gzip
 import shutil
 from urllib.parse import urlparse
@@ -64,19 +65,20 @@ def cached(
         @functools.wraps(wrapped)
         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             key = (args, tuple(sorted(kwargs.items())))
+            key_hash = hash(key)  # <-- just used for logging, not used as the key (important!)
             while True:
                 if key in cache:
-                    _LOG.info(f"cached({key}): CACHE HIT")
+                    _LOG.debug(f"cached({key_hash}): CACHE HIT")
                     cache.move_to_end(key)
                     return cache[key]
                 if key in events:
                     event = events[key]
-                    _LOG.info(f"cached({key}): avoiding concurrency")
+                    _LOG.debug(f"cached({key_hash}): avoiding concurrency")
                     await event.wait()
                 else:
                     event = asyncio.Event()
                     events[key] = event
-                    _LOG.info(f"cached({key}): cache miss ... will compute")
+                    _LOG.debug(f"cached({key_hash}): cache miss ... will compute")
                     try:
                         res = await wrapped(*args, **kwargs)
                         cache[key] = res
@@ -240,3 +242,19 @@ def chunkify(seq: List[T], n: int) -> List[List[T]]:
     if n <= 0:
         raise ValueError('n must be positive')
     return [seq[i * n:(i + 1) * n] for i in range((len(seq) + n - 1) // n)]
+
+
+def delete_file_if_exists(filename: Union[str, Path]) -> None:
+    """
+    Delete a file **if** it exists, without raising an error in the case
+    that it does *not* exist.
+
+    Note: The try/except method below is more correct than the
+          `if os.path.exists ... os.remove` method, because the
+          latter has a race condition issue.
+    """
+    try:
+        os.remove(filename)
+    except OSError as e:
+        if e.errno != errno.ENOENT:
+            raise

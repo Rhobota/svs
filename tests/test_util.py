@@ -17,6 +17,7 @@ from svs.util import (
     get_top_k,
     get_top_pairs,
     chunkify,
+    delete_file_if_exists,
 )
 
 
@@ -60,9 +61,8 @@ async def test_file_cached_wget():
     url = 'https://raw.githubusercontent.com/Rhobota/svs/main/logos/svs.png'
     cache_location = Path('.remote_cache/6f2b6fa2796868131b07d2d0d99719c96080d12f9c3d389042b966e7c7b5adf1.png')
 
-    if os.path.exists(cache_location):
-        os.unlink(cache_location)
-        assert not os.path.exists(cache_location)
+    delete_file_if_exists(cache_location)
+    assert not os.path.exists(cache_location)
 
     path1 = await file_cached_wget(url)
     assert path1 == cache_location
@@ -100,9 +100,8 @@ async def test_file_cached_wget_delete_file_on_failure():
     url = 'https://raw.githubusercontent.com/Rhobota/svs/main/logos/DOES_NOT_EXIST.png'
     cache_location = Path('.remote_cache/f59da89b51463f4af62248f83bd938bb74867d045ff424bd052851604d0986ac.png')
 
-    if os.path.exists(cache_location):
-        os.unlink(cache_location)
-        assert not os.path.exists(cache_location)
+    delete_file_if_exists(cache_location)
+    assert not os.path.exists(cache_location)
 
     with pytest.raises(Exception):
         await file_cached_wget(url)

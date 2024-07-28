@@ -2,6 +2,7 @@ import pytest
 
 import os
 import json
+import gzip
 
 import numpy as np
 
@@ -19,6 +20,8 @@ from svs.kb import (
     SQLITE_IS_STRICT,
 )
 
+from svs.util import delete_file_if_exists
+
 
 _DB_PATH = './testdb.sqlite'
 
@@ -26,9 +29,8 @@ _DB_PATH = './testdb.sqlite'
 @pytest.fixture(autouse=True)
 def clear_database():
     def clear():
-        if os.path.exists(_DB_PATH):
-            os.unlink(_DB_PATH)
-            assert not os.path.exists(_DB_PATH)
+        delete_file_if_exists(_DB_PATH)
+        delete_file_if_exists(f'{_DB_PATH}.gz')
 
     clear()
     yield
@@ -646,6 +648,21 @@ async def test_asynckb_init_and_close():
         assert q.get_key('schema_version') == 1
     db.close()
 
+    # Prev database; check that `also_gzip` works.
+    gz_path = f'{_DB_PATH}.gz'
+    delete_file_if_exists(gz_path)
+    assert not os.path.exists(gz_path)
+    kb = AsyncKB(_DB_PATH)
+    await kb.load()
+    assert kb.embedding_func.__name__ == 'mock_embeddings'  # type: ignore
+    await kb.close(also_gzip=True)
+    assert os.path.exists(gz_path)
+    with gzip.open(gz_path, 'rb') as f:
+        content1 = f.read()
+    with open(_DB_PATH, 'rb') as f:
+        content2 = f.read()
+    assert content1 == content2
+
 
 @pytest.mark.asyncio
 async def test_asynckb_add_del_doc():
@@ -838,6 +855,21 @@ async def test_asynckb_add_del_doc():
         ]
     db.close()
 
+    # Prev database; check that `force_fresh_db` works.
+    kb = AsyncKB(_DB_PATH, make_mock_embeddings_func(), force_fresh_db=True)
+    await kb.load()
+    await kb.close()
+
+    # Check the database (it should be empty now from the `force_fresh_db` above):
+    db = _DB(_DB_PATH)
+    with db as q:
+        assert json.loads(q.get_key('embedding_func_params')) == {
+            'provider': 'mock',
+        }
+        assert q._debug_embeddings() == []
+        assert q._debug_docs() == []
+    db.close()
+
 
 @pytest.mark.asyncio
 async def test_asynckb_retrieve_et_al():
@@ -1013,6 +1045,20 @@ def test_kb_init_and_close():
         }
         assert q.get_key('schema_version') == 1
     db.close()
+
+    # Prev database; check that `also_gzip` works.
+    gz_path = f'{_DB_PATH}.gz'
+    delete_file_if_exists(gz_path)
+    assert not os.path.exists(gz_path)
+    kb = KB(_DB_PATH)
+    assert kb.embedding_func.__name__ == 'mock_embeddings'  # type: ignore
+    kb.close(also_gzip=True)
+    assert os.path.exists(gz_path)
+    with gzip.open(gz_path, 'rb') as f:
+        content1 = f.read()
+    with open(_DB_PATH, 'rb') as f:
+        content2 = f.read()
+    assert content1 == content2
 
 
 def test_kb_add_del_doc():
@@ -1203,6 +1249,20 @@ def test_kb_add_del_doc():
             (1, None, 0, 'first doc', 1, None),
             (3, 1, 1, 'third doc', None, None),
         ]
+    db.close()
+
+    # Prev database; check that `force_fresh_db` works.
+    kb = KB(_DB_PATH, make_mock_embeddings_func(), force_fresh_db=True)
+    kb.close()
+
+    # Check the database (it should be empty now from the `force_fresh_db` above):
+    db = _DB(_DB_PATH)
+    with db as q:
+        assert json.loads(q.get_key('embedding_func_params')) == {
+            'provider': 'mock',
+        }
+        assert q._debug_embeddings() == []
+        assert q._debug_docs() == []
     db.close()
 
 
