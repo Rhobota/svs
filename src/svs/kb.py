@@ -26,9 +26,9 @@ from .embeddings import (
 )
 
 from .types import (
-    AsyncDocumentAdder, AsyncDocumentDeleter, AsyncDocumentQuerier,
-    DocumentAdder, DocumentDeleter, DocumentQuerier,
-    DocumentId, DocumentRecord, EdgeId,
+    AsyncDocumentAdder, AsyncDocumentDeleter, AsyncDocumentQuerier, AsyncGraphInterface,
+    DocumentAdder, DocumentDeleter, DocumentQuerier, GraphInterface,
+    DocumentId, DocumentRecord, EdgeId, NetworkXGraphTypes,
     EmbeddingFunc, Retrieval,
 )
 
@@ -574,7 +574,7 @@ class _Querier:
     def build_networkx_graph(
         self,
         multigraph: bool = True,
-    ) -> Union[nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph]:
+    ) -> NetworkXGraphTypes:
         res = self.conn.execute(
             """
             SELECT d
@@ -1117,6 +1117,82 @@ class AsyncKB:
                     return res
                 return await loop.run_in_executor(None, heavy)
 
+    @asynccontextmanager
+    async def bulk_graph_update(
+        self,
+    ) -> AsyncIterator[AsyncGraphInterface]:
+        loop = asyncio.get_running_loop()
+        async with self.db_lock:
+            db = await self._ensure_db()
+            async with db as q:
+                in_context_manager = True
+                lock = asyncio.Lock()
+                class Querier(AsyncGraphInterface):
+                    async def count_edges(self) -> int:
+                        assert in_context_manager, "You may not call this function outside of the context manager!"
+                        async with lock:
+                            def heavy() -> int:
+                                return q.count_edges()
+                            return await loop.run_in_executor(None, heavy)
+
+                    async def add_directed_edge(
+                        self,
+                        from_doc: DocumentId,
+                        to_doc: DocumentId,
+                        relationship: DocumentId,
+                        weight: Optional[float] = None,
+                    ) -> EdgeId:
+                        assert in_context_manager, "You may not call this function outside of the context manager!"
+                        async with lock:
+                            def heavy() -> EdgeId:
+                                return q.add_directed_edge(
+                                    from_doc,
+                                    to_doc,
+                                    relationship,
+                                    weight,
+                                )
+                            return await loop.run_in_executor(None, heavy)
+
+                    async def add_edge(
+                        self,
+                        doc1: DocumentId,
+                        doc2: DocumentId,
+                        relationship: DocumentId,
+                        weight: Optional[float] = None,
+                    ) -> EdgeId:
+                        assert in_context_manager, "You may not call this function outside of the context manager!"
+                        async with lock:
+                            def heavy() -> EdgeId:
+                                return q.add_edge(
+                                    doc1,
+                                    doc2,
+                                    relationship,
+                                    weight,
+                                )
+                            return await loop.run_in_executor(None, heavy)
+
+                    async def del_edge(self, edge_id: EdgeId) -> None:
+                        assert in_context_manager, "You may not call this function outside of the context manager!"
+                        async with lock:
+                            def heavy() -> None:
+                                return q.del_edge(edge_id)
+                            return await loop.run_in_executor(None, heavy)
+
+                    async def build_networkx_graph(
+                        self,
+                        multigraph: bool = True,
+                    ) -> NetworkXGraphTypes:
+                        assert in_context_manager, "You may not call this function outside of the context manager!"
+                        async with lock:
+                            def heavy() -> NetworkXGraphTypes:
+                                return q.build_networkx_graph(multigraph)
+                            return await loop.run_in_executor(None, heavy)
+
+                try:
+                    yield Querier()
+                finally:
+                    in_context_manager = False
+
 
 def _loop_main(loop: asyncio.AbstractEventLoop) -> None:
     asyncio.set_event_loop(loop)
@@ -1374,6 +1450,64 @@ class KB:
                 res.append((score, doc_1, doc_2))
             _LOG.info(f"retrieved top {n} document pairs")
             return res
+
+    @contextmanager
+    def bulk_graph_update(
+        self,
+    ) -> Iterator[GraphInterface]:
+        assert self.db is not None
+        with self.db as q:
+            in_context_manager = True
+            class Querier(GraphInterface):
+                def count_edges(self) -> int:
+                    assert in_context_manager, "You may not call this function outside of the context manager!"
+                    return q.count_edges()
+
+                def add_directed_edge(
+                    self,
+                    from_doc: DocumentId,
+                    to_doc: DocumentId,
+                    relationship: DocumentId,
+                    weight: Optional[float] = None,
+                ) -> EdgeId:
+                    assert in_context_manager, "You may not call this function outside of the context manager!"
+                    return q.add_directed_edge(
+                        from_doc,
+                        to_doc,
+                        relationship,
+                        weight,
+                    )
+
+                def add_edge(
+                    self,
+                    doc1: DocumentId,
+                    doc2: DocumentId,
+                    relationship: DocumentId,
+                    weight: Optional[float] = None,
+                ) -> EdgeId:
+                    assert in_context_manager, "You may not call this function outside of the context manager!"
+                    return q.add_edge(
+                        doc1,
+                        doc2,
+                        relationship,
+                        weight,
+                    )
+
+                def del_edge(self, edge_id: EdgeId) -> None:
+                    assert in_context_manager, "You may not call this function outside of the context manager!"
+                    return q.del_edge(edge_id)
+
+                def build_networkx_graph(
+                    self,
+                    multigraph: bool = True,
+                ) -> NetworkXGraphTypes:
+                    assert in_context_manager, "You may not call this function outside of the context manager!"
+                    return q.build_networkx_graph(multigraph)
+
+            try:
+                yield Querier()
+            finally:
+                in_context_manager = False
 
     def __len__(self) -> int:
         with self.bulk_query_docs() as q:

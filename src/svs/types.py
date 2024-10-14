@@ -17,6 +17,9 @@ DocumentId = int
 EdgeId = int
 
 
+NetworkXGraphTypes = Union[nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph]
+
+
 class DocumentRecord(TypedDict):
     id: DocumentId
     parent_id: Optional[DocumentId]
@@ -106,7 +109,7 @@ class AsyncGraphInterface(abc.ABC):
     async def build_networkx_graph(
         self,
         multigraph: bool = True,
-    ) -> Union[nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph]: ...
+    ) -> NetworkXGraphTypes: ...
 
 
 class DocumentAdder(Protocol):
@@ -184,4 +187,4 @@ class GraphInterface(abc.ABC):
     def build_networkx_graph(
         self,
         multigraph: bool = True,
-    ) -> Union[nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph]: ...
+    ) -> NetworkXGraphTypes: ...
