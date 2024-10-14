@@ -16,6 +16,8 @@ from typing import (
 
 import numpy as np
 
+import networkx as nx  # type: ignore
+
 from .embeddings import (
     embedding_to_bytes,
     embedding_from_bytes,
@@ -96,6 +98,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_edges_abr ON edges(a, b, r);
 CREATE INDEX IF NOT EXISTS idx_edges_a ON edges(a);
 CREATE INDEX IF NOT EXISTS idx_edges_b ON edges(b);
 CREATE INDEX IF NOT EXISTS idx_edges_r ON edges(r);
+CREATE INDEX IF NOT EXISTS idx_edges_d ON edges(d);
 
 """
 
@@ -567,6 +570,49 @@ class _Querier:
             (edge_id,),
         )
         assert res.rowcount == 1
+
+    def build_networkx_graph(
+        self,
+        multigraph: bool = True
+    ) -> Union[nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph]:
+        res = self.conn.execute(
+            """
+            SELECT d
+            FROM edges
+            WHERE d = 1
+            LIMIT 1;
+            """,
+            (),
+        )
+        row = res.fetchone()
+        is_directed_graph = row is not None
+
+        graph = \
+            (nx.MultiDiGraph() if is_directed_graph else nx.MultiGraph()) \
+            if multigraph else \
+            (nx.DiGraph() if is_directed_graph else nx.Graph())
+
+        res = self.conn.execute(
+            """
+            SELECT a, b, r, w, d
+            FROM edges;
+            """,
+            (),
+        )
+
+        for a, b, r, w, d in res:
+            attrs = {
+                'edge_doc': r,
+            }
+            if w is not None:
+                attrs['weight'] = w
+            graph.add_edge(a, b, **attrs)
+            if is_directed_graph and d == 0:
+                # This is an undirected edge being added to a directed graph,
+                # so we'll explicitly add the back-edge.
+                graph.add_edge(b, a, **attrs)
+
+        return graph
 
     def _debug_keyval(self) -> Dict[str, Any]:
         res = self.conn.execute(

@@ -6,6 +6,8 @@ import gzip
 
 import numpy as np
 
+import networkx as nx  # type: ignore
+
 from typing import List
 
 from svs.embeddings import (
@@ -621,7 +623,24 @@ def test_edge_table():
                 weight=None,
             )
 
-        # TODO: networkx
+        graph = q.build_networkx_graph(multigraph = True)
+        assert isinstance(graph, nx.MultiDiGraph)
+        assert set(graph.nodes()) == {1, 2, 3, 4, 5}
+        edge_set = set()
+        for a, b, attrs in graph.edges(data=True):
+            edge_set.add((a, b, attrs.get('edge_doc'), attrs.get('weight')))
+        assert edge_set == {
+            (2, 4, 6, None),
+            (2, 4, 7, None),
+            (1, 4, 6, 0.5),
+            (1, 3, 7, 1.5),
+            (2, 3, 6, None),
+            (2, 5, 7, 2.5),
+            (4, 2, 6, None),
+            (4, 2, 7, None),
+            (4, 1, 6, 0.5),
+            (3, 1, 7, 1.5),
+        }
 
     db.close()
 
@@ -644,6 +663,23 @@ def test_edge_table():
             (6, 2, 5, 7, 2.5, 1),
         ]
 
+        graph = q.build_networkx_graph(multigraph = False)
+        assert isinstance(graph, nx.DiGraph)
+        assert set(graph.nodes()) == {1, 2, 3, 4, 5}
+        edge_set = set()
+        for a, b, attrs in graph.edges(data=True):
+            edge_set.add((a, b, attrs.get('edge_doc'), attrs.get('weight')))
+        assert edge_set == {
+            (1, 3, 7, 1.5),
+            (1, 4, 6, 0.5),
+            (2, 3, 6, None),
+            (2, 4, 6, None),
+            (2, 5, 7, 2.5),
+            (3, 1, 7, 1.5),
+            (4, 1, 6, 0.5),
+            (4, 2, 6, None),
+        }
+
         q.del_doc(doc_a_id)
         q.del_doc(doc_e_id)
 
@@ -662,6 +698,18 @@ def test_edge_table():
             (1, 2, 4, 6, None, 0),
             (5, 2, 3, 6, None, 1),
         ]
+
+        graph = q.build_networkx_graph(multigraph = False)
+        assert isinstance(graph, nx.Graph)
+        assert set(graph.nodes()) == {2, 3, 4}
+        edge_set = set()
+        for a, b, attrs in graph.edges(data=True):
+            a, b = min(a, b), max(a, b)
+            edge_set.add((a, b, attrs.get('edge_doc'), attrs.get('weight')))
+        assert edge_set == {
+            (2, 3, 6, None),
+            (2, 4, 6, None),
+        }
 
     db.close()
 
@@ -683,8 +731,6 @@ def test_edge_table():
             (1, 2, 4, 6, None, 0),
             (5, 2, 3, 6, None, 1),
         ]
-
-        # TODO: networkx
 
     db.close()
 

@@ -39,6 +39,7 @@ dependencies = [
   "numpy",
   "aiohttp[speedups]",
   "python-dotenv",
+  "networkx",
 ]
 
 [project.urls]
