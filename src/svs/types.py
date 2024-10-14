@@ -12,6 +12,8 @@ EmbeddingFunc = Callable[[List[str]], Awaitable[List[List[float]]]]
 
 DocumentId = int
 
+EdgeId = int
+
 
 class DocumentRecord(TypedDict):
     id: DocumentId

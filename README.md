@@ -25,6 +25,11 @@
   - Supports storing arbitrary metadata with each document. 🗃️
   - Supports storing and querying (optional) parent-child relationships between documents. 👪
      - Fully hierarchical - parents can have parents, children can have children, whatever you need...
+  - Supports storing an (optional) graph structure over your documents.
+     - So you can do GraphRAG!
+     - Batteries _not_ included:
+        - This library only handles graph _storage_.
+        - You have to implement your own graph _algorithms_.
   - Both **sync** and **asyncio** implementations:
      - use the synchronous impl (`svs.KB`) for scripts, notebooks, etc
      - use the asyncio impl (`svs.AsyncKB`) for web-services, etc

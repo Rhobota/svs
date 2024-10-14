@@ -428,6 +428,267 @@ def test_doc_table():
     db.close()
 
 
+def test_edge_table():
+    # Open the database
+    db = _DB(_DB_PATH)
+    with db as q:
+        assert q.count_docs() == 0
+        assert q.count_edges() == 0
+
+        doc_a_id = q.add_doc(
+            text      = 'first doc',
+            parent_id = None,
+            meta      = None,
+            embedding = None,
+        )
+        assert doc_a_id == 1
+
+        doc_b_id = q.add_doc(
+            text      = 'second doc',
+            parent_id = None,
+            meta      = None,
+            embedding = None,
+        )
+        assert doc_b_id == 2
+
+        doc_c_id = q.add_doc(
+            text      = 'third doc',
+            parent_id = None,
+            meta      = {'test': 'stuff'},
+            embedding = None,
+        )
+        assert doc_c_id == 3
+
+        doc_d_id = q.add_doc(
+            text      = 'forth doc',
+            parent_id = None,
+            meta      = {'test': 'again'},
+            embedding = None,
+        )
+        assert doc_d_id == 4
+
+        doc_e_id = q.add_doc(
+            text      = 'fifth doc',
+            parent_id = None,
+            meta      = {'test': 5},
+            embedding = None,
+        )
+        assert doc_e_id == 5
+
+        edge_type_1 = q.add_doc(
+            text      = 'edge type 1',
+            parent_id = None,
+            meta      = None,
+            embedding = None,
+        )
+        assert edge_type_1 == 6
+
+        edge_type_2 = q.add_doc(
+            text      = 'edge type 2',
+            parent_id = None,
+            meta      = None,
+            embedding = None,
+        )
+        assert edge_type_2 == 7
+
+        assert q.count_docs() == 7
+        assert q.count_edges() == 0
+
+        assert q._debug_docs() == [
+            (1, None, 0, 'first doc', None, None),
+            (2, None, 0, 'second doc', None, None),
+            (3, None, 0, 'third doc', None, '{"test": "stuff"}'),
+            (4, None, 0, 'forth doc', None, '{"test": "again"}'),
+            (5, None, 0, 'fifth doc', None, '{"test": 5}'),
+            (6, None, 0, 'edge type 1', None, None),
+            (7, None, 0, 'edge type 2', None, None),
+        ]
+
+        assert q._debug_edges() == []
+
+        edge_1_id = q.add_edge(
+            doc_b_id,
+            doc_d_id,
+            edge_type_1,
+            weight = None,
+        )
+        assert edge_1_id == 1
+
+        edge_2_id = q.add_edge(
+            doc_b_id,
+            doc_d_id,
+            edge_type_2,
+            weight = None,
+        )
+        assert edge_2_id == 2
+
+        edge_3_id = q.add_edge(
+            doc_a_id,
+            doc_d_id,
+            edge_type_1,
+            weight = 0.5,
+        )
+        assert edge_3_id == 3
+
+        edge_4_id = q.add_edge(
+            doc_a_id,
+            doc_c_id,
+            edge_type_2,
+            weight = 1.5,
+        )
+        assert edge_4_id == 4
+
+        edge_5_id = q.add_directed_edge(
+            doc_b_id,
+            doc_c_id,
+            edge_type_1,
+            weight = None,
+        )
+        assert edge_5_id == 5
+
+        edge_6_id = q.add_directed_edge(
+            doc_b_id,
+            doc_e_id,
+            edge_type_2,
+            weight = 2.5,
+        )
+        assert edge_6_id == 6
+
+        assert q.count_docs() == 7
+        assert q.count_edges() == 6
+
+        assert q._debug_docs() == [
+            (1, None, 0, 'first doc', None, None),
+            (2, None, 0, 'second doc', None, None),
+            (3, None, 0, 'third doc', None, '{"test": "stuff"}'),
+            (4, None, 0, 'forth doc', None, '{"test": "again"}'),
+            (5, None, 0, 'fifth doc', None, '{"test": 5}'),
+            (6, None, 0, 'edge type 1', None, None),
+            (7, None, 0, 'edge type 2', None, None),
+        ]
+
+        assert q._debug_edges() == [
+            (1, 2, 4, 6, None, 0),
+            (2, 2, 4, 7, None, 0),
+            (3, 1, 4, 6, 0.5, 0),
+            (4, 1, 3, 7, 1.5, 0),
+            (5, 2, 3, 6, None, 1),
+            (6, 2, 5, 7, 2.5, 1),
+        ]
+
+        with pytest.raises(RuntimeError):
+            # Below attempts to insert a duplicate edge!
+            q.add_edge(
+                doc_b_id,
+                doc_e_id,
+                edge_type_2,
+                weight=None,
+            )
+
+    db.close()
+
+    # **Re-open** the database
+    db = _DB(_DB_PATH)
+    with db as q:
+        assert q.count_docs() == 7
+        assert q.count_edges() == 6
+
+        assert q._debug_docs() == [
+            (1, None, 0, 'first doc', None, None),
+            (2, None, 0, 'second doc', None, None),
+            (3, None, 0, 'third doc', None, '{"test": "stuff"}'),
+            (4, None, 0, 'forth doc', None, '{"test": "again"}'),
+            (5, None, 0, 'fifth doc', None, '{"test": 5}'),
+            (6, None, 0, 'edge type 1', None, None),
+            (7, None, 0, 'edge type 2', None, None),
+        ]
+
+        assert q._debug_edges() == [
+            (1, 2, 4, 6, None, 0),
+            (2, 2, 4, 7, None, 0),
+            (3, 1, 4, 6, 0.5, 0),
+            (4, 1, 3, 7, 1.5, 0),
+            (5, 2, 3, 6, None, 1),
+            (6, 2, 5, 7, 2.5, 1),
+        ]
+
+        with pytest.raises(RuntimeError):
+            # Below attempts to insert a duplicate edge!
+            q.add_directed_edge(
+                doc_a_id,
+                doc_c_id,
+                edge_type_2,
+                weight=None,
+            )
+
+        # TODO: networkx
+
+    db.close()
+
+    # **Re-open** the database
+    db = _DB(_DB_PATH)
+    with db as q:
+        assert q.count_docs() == 7
+        assert q.count_edges() == 6
+
+        q.del_edge(edge_2_id)
+
+        assert q.count_docs() == 7
+        assert q.count_edges() == 5
+
+        assert q._debug_edges() == [
+            (1, 2, 4, 6, None, 0),
+            (3, 1, 4, 6, 0.5, 0),
+            (4, 1, 3, 7, 1.5, 0),
+            (5, 2, 3, 6, None, 1),
+            (6, 2, 5, 7, 2.5, 1),
+        ]
+
+        q.del_doc(doc_a_id)
+        q.del_doc(doc_e_id)
+
+        assert q.count_docs() == 5
+        assert q.count_edges() == 2
+
+        assert q._debug_docs() == [
+            (2, None, 0, 'second doc', None, None),
+            (3, None, 0, 'third doc', None, '{"test": "stuff"}'),
+            (4, None, 0, 'forth doc', None, '{"test": "again"}'),
+            (6, None, 0, 'edge type 1', None, None),
+            (7, None, 0, 'edge type 2', None, None),
+        ]
+
+        assert q._debug_edges() == [
+            (1, 2, 4, 6, None, 0),
+            (5, 2, 3, 6, None, 1),
+        ]
+
+    db.close()
+
+    # **Re-open** the database
+    db = _DB(_DB_PATH)
+    with db as q:
+        assert q.count_docs() == 5
+        assert q.count_edges() == 2
+
+        assert q._debug_docs() == [
+            (2, None, 0, 'second doc', None, None),
+            (3, None, 0, 'third doc', None, '{"test": "stuff"}'),
+            (4, None, 0, 'forth doc', None, '{"test": "again"}'),
+            (6, None, 0, 'edge type 1', None, None),
+            (7, None, 0, 'edge type 2', None, None),
+        ]
+
+        assert q._debug_edges() == [
+            (1, 2, 4, 6, None, 0),
+            (5, 2, 3, 6, None, 1),
+        ]
+
+        # TODO: networkx
+
+    db.close()
+
+
 def test_embedding_matrix():
     # Open the database
     db = _DB(_DB_PATH)
