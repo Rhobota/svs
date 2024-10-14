@@ -700,14 +700,30 @@ def test_edge_table():
         ]
 
         graph = q.build_networkx_graph(multigraph = False)
-        assert isinstance(graph, nx.Graph)
+        assert isinstance(graph, nx.DiGraph)
         assert set(graph.nodes()) == {2, 3, 4}
+        edge_set = set()
+        for a, b, attrs in graph.edges(data=True):
+            edge_set.add((a, b, attrs.get('edge_doc'), attrs.get('weight')))
+        assert edge_set == {
+            (2, 3, 6, None),
+            (2, 4, 6, None),
+            (4, 2, 6, None),
+        }
+
+        q.del_edge(edge_5_id)
+
+        assert q.count_docs() == 5
+        assert q.count_edges() == 1
+
+        graph = q.build_networkx_graph(multigraph = False)
+        assert isinstance(graph, nx.Graph)
+        assert set(graph.nodes()) == {2, 4}
         edge_set = set()
         for a, b, attrs in graph.edges(data=True):
             a, b = min(a, b), max(a, b)
             edge_set.add((a, b, attrs.get('edge_doc'), attrs.get('weight')))
         assert edge_set == {
-            (2, 3, 6, None),
             (2, 4, 6, None),
         }
 
@@ -717,7 +733,7 @@ def test_edge_table():
     db = _DB(_DB_PATH)
     with db as q:
         assert q.count_docs() == 5
-        assert q.count_edges() == 2
+        assert q.count_edges() == 1
 
         assert q._debug_docs() == [
             (2, None, 0, 'second doc', None, None),
@@ -729,7 +745,6 @@ def test_edge_table():
 
         assert q._debug_edges() == [
             (1, 2, 4, 6, None, 0),
-            (5, 2, 3, 6, None, 1),
         ]
 
     db.close()
