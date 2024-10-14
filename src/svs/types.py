@@ -4,6 +4,8 @@ from typing import (
     AsyncIterator, Iterator,
 )
 
+import networkx as nx  # type: ignore
+
 import abc
 
 
@@ -11,6 +13,11 @@ EmbeddingFunc = Callable[[List[str]], Awaitable[List[List[float]]]]
 
 
 DocumentId = int
+
+EdgeId = int
+
+
+NetworkXGraphTypes = Union[nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph]
 
 
 class DocumentRecord(TypedDict):
@@ -73,6 +80,38 @@ class AsyncDocumentQuerier(abc.ABC):
     ) -> AsyncIterator[DocumentRecord]: ...
 
 
+class AsyncGraphInterface(abc.ABC):
+    @abc.abstractmethod
+    async def count_edges(self) -> int: ...
+
+    @abc.abstractmethod
+    async def add_directed_edge(
+        self,
+        from_doc: DocumentId,
+        to_doc: DocumentId,
+        relationship: DocumentId,
+        weight: Optional[float] = None,
+    ) -> EdgeId: ...
+
+    @abc.abstractmethod
+    async def add_edge(
+        self,
+        doc1: DocumentId,
+        doc2: DocumentId,
+        relationship: DocumentId,
+        weight: Optional[float] = None,
+    ) -> EdgeId: ...
+
+    @abc.abstractmethod
+    async def del_edge(self, edge_id: EdgeId) -> None: ...
+
+    @abc.abstractmethod
+    async def build_networkx_graph(
+        self,
+        multigraph: bool = True,
+    ) -> NetworkXGraphTypes: ...
+
+
 class DocumentAdder(Protocol):
     def __call__(
         self,
@@ -117,3 +156,35 @@ class DocumentQuerier(abc.ABC):
         self,
         include_embedding: bool = False,
     ) -> Iterator[DocumentRecord]: ...
+
+
+class GraphInterface(abc.ABC):
+    @abc.abstractmethod
+    def count_edges(self) -> int: ...
+
+    @abc.abstractmethod
+    def add_directed_edge(
+        self,
+        from_doc: DocumentId,
+        to_doc: DocumentId,
+        relationship: DocumentId,
+        weight: Optional[float] = None,
+    ) -> EdgeId: ...
+
+    @abc.abstractmethod
+    def add_edge(
+        self,
+        doc1: DocumentId,
+        doc2: DocumentId,
+        relationship: DocumentId,
+        weight: Optional[float] = None,
+    ) -> EdgeId: ...
+
+    @abc.abstractmethod
+    def del_edge(self, edge_id: EdgeId) -> None: ...
+
+    @abc.abstractmethod
+    def build_networkx_graph(
+        self,
+        multigraph: bool = True,
+    ) -> NetworkXGraphTypes: ...

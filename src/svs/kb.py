@@ -16,6 +16,8 @@ from typing import (
 
 import numpy as np
 
+import networkx as nx  # type: ignore
+
 from .embeddings import (
     embedding_to_bytes,
     embedding_from_bytes,
@@ -24,9 +26,9 @@ from .embeddings import (
 )
 
 from .types import (
-    AsyncDocumentAdder, AsyncDocumentDeleter, AsyncDocumentQuerier,
-    DocumentAdder, DocumentDeleter, DocumentQuerier,
-    DocumentId, DocumentRecord,
+    AsyncDocumentAdder, AsyncDocumentDeleter, AsyncDocumentQuerier, AsyncGraphInterface,
+    DocumentAdder, DocumentDeleter, DocumentQuerier, GraphInterface,
+    DocumentId, DocumentRecord, EdgeId, NetworkXGraphTypes,
     EmbeddingFunc, Retrieval,
 )
 
@@ -82,6 +84,21 @@ CREATE TABLE IF NOT EXISTS docs (
 CREATE INDEX IF NOT EXISTS idx_docs_parent_id ON docs(parent_id);
 CREATE INDEX IF NOT EXISTS idx_docs_level ON docs(level);
 CREATE INDEX IF NOT EXISTS idx_docs_embedding ON docs(embedding);
+
+CREATE TABLE IF NOT EXISTS edges (
+    id INTEGER PRIMARY KEY,
+    a INTEGER REFERENCES docs(id) NOT NULL,  -- first node
+    b INTEGER REFERENCES docs(id) NOT NULL,  -- second node
+    r INTEGER REFERENCES docs(id) NOT NULL,  -- edge relationship
+    w REAL, -- ALLOW NULL                    -- optional weight of this edge
+    d INTEGER NOT NULL                       -- 0=undirected (a<->b); 1=directed (a->b)
+) STRICT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_edges_abr ON edges(a, b, r);
+CREATE INDEX IF NOT EXISTS idx_edges_a ON edges(a);
+CREATE INDEX IF NOT EXISTS idx_edges_b ON edges(b);
+CREATE INDEX IF NOT EXISTS idx_edges_r ON edges(r);
+CREATE INDEX IF NOT EXISTS idx_edges_d ON edges(d);
 
 """
 
@@ -244,6 +261,23 @@ class _Querier:
         )
         if parent_res.fetchone() is not None:
             raise RuntimeError("You cannot delete a document that is a parent.")
+        res = self.conn.execute(
+            """
+            SELECT id
+            FROM edges
+            WHERE a=? OR b=? OR r=?;
+            """,
+            (doc_id, doc_id, doc_id),
+        )
+        edges_to_delete = set([row[0] for row in res])
+        for edge_id in edges_to_delete:
+            res = self.conn.execute(
+                """
+                DELETE FROM edges WHERE id = ?;
+                """,
+                (edge_id,),
+            )
+            assert res.rowcount == 1
         res = self.conn.execute(
             """
             SELECT embedding
@@ -476,6 +510,110 @@ class _Querier:
 
         return embeddings_matrix, emb_id_lookup
 
+    def count_edges(self) -> int:
+        res = self.conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM edges;
+            """,
+            (),
+        )
+        row = res.fetchone()
+        assert row is not None
+        n = row[0]
+        assert isinstance(n, int)
+        return n
+
+    def add_directed_edge(
+        self,
+        from_doc: DocumentId,
+        to_doc: DocumentId,
+        relationship: DocumentId,
+        weight: Optional[float],
+    ) -> EdgeId:
+        try:
+            res = self.conn.execute(
+                """
+                INSERT INTO edges (a, b, r, w, d) VALUES (?, ?, ?, ?, 1);
+                """,
+                (from_doc, to_doc, relationship, weight),
+            )
+            assert res.lastrowid is not None
+            return res.lastrowid
+        except sqlite3.IntegrityError:
+            raise RuntimeError("This edge triplet already exists!")
+
+    def add_edge(
+        self,
+        doc1: DocumentId,
+        doc2: DocumentId,
+        relationship: DocumentId,
+        weight: Optional[float],
+    ) -> EdgeId:
+        try:
+            res = self.conn.execute(
+                """
+                INSERT INTO edges (a, b, r, w, d) VALUES (?, ?, ?, ?, 0);
+                """,
+                (doc1, doc2, relationship, weight),
+            )
+            assert res.lastrowid is not None
+            return res.lastrowid
+        except sqlite3.IntegrityError:
+            raise RuntimeError("This edge triplet already exists!")
+
+    def del_edge(self, edge_id: EdgeId) -> None:
+        res = self.conn.execute(
+            """
+            DELETE FROM edges WHERE id = ?;
+            """,
+            (edge_id,),
+        )
+        assert res.rowcount == 1
+
+    def build_networkx_graph(
+        self,
+        multigraph: bool = True,
+    ) -> NetworkXGraphTypes:
+        res = self.conn.execute(
+            """
+            SELECT d
+            FROM edges
+            WHERE d = 1
+            LIMIT 1;
+            """,
+            (),
+        )
+        row = res.fetchone()
+        is_directed_graph = row is not None
+
+        graph = \
+            (nx.MultiDiGraph() if is_directed_graph else nx.MultiGraph()) \
+            if multigraph else \
+            (nx.DiGraph() if is_directed_graph else nx.Graph())
+
+        res = self.conn.execute(
+            """
+            SELECT a, b, r, w, d
+            FROM edges;
+            """,
+            (),
+        )
+
+        for a, b, r, w, d in res:
+            attrs = {
+                'edge_doc': r,
+            }
+            if w is not None:
+                attrs['weight'] = w
+            graph.add_edge(a, b, **attrs)
+            if is_directed_graph and d == 0:
+                # This is an undirected edge being added to a directed graph,
+                # so we'll explicitly add the back-edge.
+                graph.add_edge(b, a, **attrs)
+
+        return graph
+
     def _debug_keyval(self) -> Dict[str, Any]:
         res = self.conn.execute(
             """
@@ -507,6 +645,19 @@ class _Querier:
             """
             SELECT *
             FROM docs
+            """,
+            (),
+        )
+        return [
+            tuple(row)
+            for row in res
+        ]
+
+    def _debug_edges(self) -> List[Tuple]:
+        res = self.conn.execute(
+            """
+            SELECT *
+            FROM edges
             """,
             (),
         )
@@ -966,6 +1117,82 @@ class AsyncKB:
                     return res
                 return await loop.run_in_executor(None, heavy)
 
+    @asynccontextmanager
+    async def bulk_graph_update(
+        self,
+    ) -> AsyncIterator[AsyncGraphInterface]:
+        loop = asyncio.get_running_loop()
+        async with self.db_lock:
+            db = await self._ensure_db()
+            async with db as q:
+                in_context_manager = True
+                lock = asyncio.Lock()
+                class Querier(AsyncGraphInterface):
+                    async def count_edges(self) -> int:
+                        assert in_context_manager, "You may not call this function outside of the context manager!"
+                        async with lock:
+                            def heavy() -> int:
+                                return q.count_edges()
+                            return await loop.run_in_executor(None, heavy)
+
+                    async def add_directed_edge(
+                        self,
+                        from_doc: DocumentId,
+                        to_doc: DocumentId,
+                        relationship: DocumentId,
+                        weight: Optional[float] = None,
+                    ) -> EdgeId:
+                        assert in_context_manager, "You may not call this function outside of the context manager!"
+                        async with lock:
+                            def heavy() -> EdgeId:
+                                return q.add_directed_edge(
+                                    from_doc,
+                                    to_doc,
+                                    relationship,
+                                    weight,
+                                )
+                            return await loop.run_in_executor(None, heavy)
+
+                    async def add_edge(
+                        self,
+                        doc1: DocumentId,
+                        doc2: DocumentId,
+                        relationship: DocumentId,
+                        weight: Optional[float] = None,
+                    ) -> EdgeId:
+                        assert in_context_manager, "You may not call this function outside of the context manager!"
+                        async with lock:
+                            def heavy() -> EdgeId:
+                                return q.add_edge(
+                                    doc1,
+                                    doc2,
+                                    relationship,
+                                    weight,
+                                )
+                            return await loop.run_in_executor(None, heavy)
+
+                    async def del_edge(self, edge_id: EdgeId) -> None:
+                        assert in_context_manager, "You may not call this function outside of the context manager!"
+                        async with lock:
+                            def heavy() -> None:
+                                return q.del_edge(edge_id)
+                            return await loop.run_in_executor(None, heavy)
+
+                    async def build_networkx_graph(
+                        self,
+                        multigraph: bool = True,
+                    ) -> NetworkXGraphTypes:
+                        assert in_context_manager, "You may not call this function outside of the context manager!"
+                        async with lock:
+                            def heavy() -> NetworkXGraphTypes:
+                                return q.build_networkx_graph(multigraph)
+                            return await loop.run_in_executor(None, heavy)
+
+                try:
+                    yield Querier()
+                finally:
+                    in_context_manager = False
+
 
 def _loop_main(loop: asyncio.AbstractEventLoop) -> None:
     asyncio.set_event_loop(loop)
@@ -1223,6 +1450,64 @@ class KB:
                 res.append((score, doc_1, doc_2))
             _LOG.info(f"retrieved top {n} document pairs")
             return res
+
+    @contextmanager
+    def bulk_graph_update(
+        self,
+    ) -> Iterator[GraphInterface]:
+        assert self.db is not None
+        with self.db as q:
+            in_context_manager = True
+            class Querier(GraphInterface):
+                def count_edges(self) -> int:
+                    assert in_context_manager, "You may not call this function outside of the context manager!"
+                    return q.count_edges()
+
+                def add_directed_edge(
+                    self,
+                    from_doc: DocumentId,
+                    to_doc: DocumentId,
+                    relationship: DocumentId,
+                    weight: Optional[float] = None,
+                ) -> EdgeId:
+                    assert in_context_manager, "You may not call this function outside of the context manager!"
+                    return q.add_directed_edge(
+                        from_doc,
+                        to_doc,
+                        relationship,
+                        weight,
+                    )
+
+                def add_edge(
+                    self,
+                    doc1: DocumentId,
+                    doc2: DocumentId,
+                    relationship: DocumentId,
+                    weight: Optional[float] = None,
+                ) -> EdgeId:
+                    assert in_context_manager, "You may not call this function outside of the context manager!"
+                    return q.add_edge(
+                        doc1,
+                        doc2,
+                        relationship,
+                        weight,
+                    )
+
+                def del_edge(self, edge_id: EdgeId) -> None:
+                    assert in_context_manager, "You may not call this function outside of the context manager!"
+                    return q.del_edge(edge_id)
+
+                def build_networkx_graph(
+                    self,
+                    multigraph: bool = True,
+                ) -> NetworkXGraphTypes:
+                    assert in_context_manager, "You may not call this function outside of the context manager!"
+                    return q.build_networkx_graph(multigraph)
+
+            try:
+                yield Querier()
+            finally:
+                in_context_manager = False
 
     def __len__(self) -> int:
         with self.bulk_query_docs() as q:
