@@ -40,6 +40,7 @@ dependencies = [
   "aiohttp[speedups]",
   "python-dotenv",
   "networkx",
+  "pydot",
 ]
 
 [project.urls]
@@ -59,6 +60,10 @@ packages = ["src/svs"]
 
 [tool.hatch.version]
 path = "src/svs/__init__.py"
+
+[tool.hatch.envs.default]
+python = "3.12"
+features = ["dev"]
 
 [tool.hatch.envs.types]
 features = ["dev"]
