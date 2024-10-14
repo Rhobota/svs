@@ -573,7 +573,7 @@ class _Querier:
 
     def build_networkx_graph(
         self,
-        multigraph: bool = True
+        multigraph: bool = True,
     ) -> Union[nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph]:
         res = self.conn.execute(
             """
