@@ -4,7 +4,7 @@ from random import random
 from itertools import combinations
 
 import networkx as nx  # type: ignore
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt  # type: ignore
 
 
 def build_graph(path: str) -> None:
