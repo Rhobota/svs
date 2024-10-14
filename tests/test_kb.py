@@ -1274,6 +1274,22 @@ async def test_asynckb_retrieve_et_al():
 
     await kb.close()
 
+    # Graph interface:
+    kb = AsyncKB(_DB_PATH, embedding_func)
+    await kb.load()
+
+    async with kb.bulk_graph_update() as q:
+        assert (await q.count_edges()) == 0
+        await q.add_directed_edge(1, 3, 4)
+        await q.add_edge(1, 2, 4)
+        assert (await q.count_edges()) == 2
+        graph = await q.build_networkx_graph(multigraph=False)
+        assert isinstance(graph, nx.DiGraph)
+        await q.del_edge(1)
+        assert (await q.count_edges()) == 1
+
+    await kb.close()
+
     # Delete and retrieve (i.e. test invalidating the embeddings)
     kb = AsyncKB(_DB_PATH, embedding_func)
     await kb.load()
@@ -1664,6 +1680,21 @@ def test_kb_retrieve_et_al():
     docs = kb.retrieve('... forth ...', n=1)
     assert len(docs) == 1
     assert docs[0]['doc']['text'] == 'forth doc'
+
+    kb.close()
+
+    # Graph interface:
+    kb = KB(_DB_PATH, embedding_func)
+
+    with kb.bulk_graph_update() as q:
+        assert q.count_edges() == 0
+        q.add_directed_edge(1, 3, 4)
+        q.add_edge(1, 2, 4)
+        assert q.count_edges() == 2
+        graph = q.build_networkx_graph(multigraph=False)
+        assert isinstance(graph, nx.DiGraph)
+        q.del_edge(1)
+        assert q.count_edges() == 1
 
     kb.close()
 
