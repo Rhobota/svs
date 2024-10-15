@@ -180,6 +180,70 @@ class _Querier:
         if res.rowcount == 0:
             raise KeyError(key)
 
+    def get_key_user(self, key: str) -> Any:
+        res = self.conn.execute(
+            """
+            SELECT val
+            FROM keyval_user
+            WHERE key = ?;
+            """,
+            (key,),
+        )
+        row = res.fetchone()
+        if row is None:
+            raise KeyError(key)
+        return row[0]
+
+    def set_key_user(self, key: str, val: Any) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO keyval_user (key, val) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                val = excluded.val;
+            """,
+            (key, val),
+        )
+
+    def del_key_user(self, key: str) -> None:
+        res = self.conn.execute(
+            """
+            DELETE
+            FROM keyval_user
+            WHERE key = ?;
+            """,
+            (key,),
+        )
+        if res.rowcount == 0:
+            raise KeyError(key)
+
+    def has_key_user(self, key: str) -> bool:
+        res = self.conn.execute(
+            """
+            SELECT key
+            FROM keyval_user
+            WHERE key = ?;
+            """,
+            (key,),
+        )
+        row = res.fetchone()
+        return row is not None
+
+    def count_keys_user(self) -> int:
+        res = self.conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM keyval_user;
+            """,
+            (),
+        )
+        row = res.fetchone()
+        assert row is not None
+        n = row[0]
+        assert isinstance(n, int)
+        return n
+
+    # TODO: methods to iterate keyval_user
+
     def count_docs(self) -> int:
         res = self.conn.execute(
             """
