@@ -1,7 +1,7 @@
 from typing import (
     Any, Awaitable, Callable, Dict, List,
     Optional, Protocol, TypedDict, Union,
-    AsyncIterator, Iterator,
+    AsyncIterator, Iterator, Tuple,
 )
 
 import networkx as nx  # type: ignore
@@ -110,6 +110,26 @@ class AsyncGraphInterface(abc.ABC):
         self,
         multigraph: bool = True,
     ) -> NetworkXGraphTypes: ...
+
+
+class AsyncKeyValueInterface(abc.ABC):
+    @abc.abstractmethod
+    async def has(self, key: str) -> bool: ...
+
+    @abc.abstractmethod
+    async def get(self, key: str, default: Any = KeyError) -> Any: ...
+
+    @abc.abstractmethod
+    async def set(self, key: str, val: Any) -> None: ...
+
+    @abc.abstractmethod
+    async def remove(self, key: str) -> None: ...
+
+    @abc.abstractmethod
+    async def count(self) -> int: ...
+
+    @abc.abstractmethod
+    async def items(self) -> AsyncIterator[Tuple[str, Any]]: ...
 
 
 class DocumentAdder(Protocol):
