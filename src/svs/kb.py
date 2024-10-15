@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import contextmanager, asynccontextmanager
+import inspect
 import sqlite3
 import json
 import gzip
@@ -1310,10 +1311,11 @@ class AsyncKB:
                                 try:
                                     return q.get_key_user(key)
                                 except KeyError:
-                                    if issubclass(default, KeyError):
-                                        raise
-                                    elif issubclass(default, Exception):
-                                        raise default()
+                                    if inspect.isclass(default):
+                                        if issubclass(default, KeyError):
+                                            raise
+                                        elif issubclass(default, Exception):
+                                            raise default()
                                     return default
                             return await loop.run_in_executor(None, heavy)
 
@@ -1700,10 +1702,11 @@ class KB:
                     try:
                         return q.get_key_user(key)
                     except KeyError:
-                        if issubclass(default, KeyError):
-                            raise
-                        elif issubclass(default, Exception):
-                            raise default()
+                        if inspect.isclass(default):
+                            if issubclass(default, KeyError):
+                                raise
+                            elif issubclass(default, Exception):
+                                raise default()
                         return default
 
                 def __getitem__(self, key: str) -> Any:
