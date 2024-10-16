@@ -30,6 +30,7 @@
      - Batteries _not_ included:
         - This library only handles graph _storage_.
         - You have to implement your own graph _algorithms_.
+  - Supports generic key/value storage, for those random things you don't know where else to put. 🤷
   - Both **sync** and **asyncio** implementations:
      - use the synchronous impl (`svs.KB`) for scripts, notebooks, etc
      - use the asyncio impl (`svs.AsyncKB`) for web-services, etc

@@ -1338,6 +1338,121 @@ async def test_asynckb_vector_magnitude():
     await kb.close()
 
 
+@pytest.mark.asyncio
+async def test_asynckb_keyval_interface():
+    # New database!
+    kb = AsyncKB(_DB_PATH, make_mock_embeddings_func())
+    async with kb.bulk_keyval_update() as q:
+        assert (await q.count()) == 0
+        assert not (await q.has('a'))
+        assert not (await q.has('b'))
+        with pytest.raises(KeyError):
+            await q.get('a')
+        with pytest.raises(KeyError):
+            await q.get('b')
+        with pytest.raises(ValueError):
+            await q.get('a', ValueError)
+        with pytest.raises(ValueError):
+            await q.get('b', ValueError)
+        assert (await q.get('a', 'a_default')) == 'a_default'
+        assert (await q.get('b', 'b_default')) == 'b_default'
+
+        await q.set('b', 77)
+
+        assert (await q.count()) == 1
+        assert not (await q.has('a'))
+        assert (await q.has('b'))
+        with pytest.raises(KeyError):
+            await q.get('a')
+        assert (await q.get('b')) == 77
+        with pytest.raises(ValueError):
+            await q.get('a', ValueError)
+        assert (await q.get('b', ValueError)) == 77
+        assert (await q.get('a', 'a_default')) == 'a_default'
+        assert (await q.get('b', 'b_default')) == 77
+
+        await q.set('b', 'new_val')
+
+        assert (await q.count()) == 1
+        assert not (await q.has('a'))
+        assert (await q.has('b'))
+        with pytest.raises(KeyError):
+            await q.get('a')
+        assert (await q.get('b')) == 'new_val'
+        with pytest.raises(ValueError):
+            await q.get('a', ValueError)
+        assert (await q.get('b', ValueError)) == 'new_val'
+        assert (await q.get('a', 'a_default')) == 'a_default'
+        assert (await q.get('b', 'b_default')) == 'new_val'
+
+    await kb.close()
+
+    # Prev database; let it remember the embedding function!
+    kb = AsyncKB(_DB_PATH)
+    async with kb.bulk_keyval_update() as q:
+        assert (await q.count()) == 1
+        assert not (await q.has('a'))
+        assert (await q.has('b'))
+        with pytest.raises(KeyError):
+            await q.get('a')
+        assert (await q.get('b')) == 'new_val'
+        with pytest.raises(ValueError):
+            await q.get('a', ValueError)
+        assert (await q.get('b', ValueError)) == 'new_val'
+        assert (await q.get('a', 'a_default')) == 'a_default'
+        assert (await q.get('b', 'b_default')) == 'new_val'
+
+        with pytest.raises(KeyError):
+            await q.remove('dne')
+
+        await q.remove('b')
+
+        assert (await q.count()) == 0
+        assert not (await q.has('a'))
+        assert not (await q.has('b'))
+        with pytest.raises(KeyError):
+            await q.get('a')
+        with pytest.raises(KeyError):
+            await q.get('b')
+        with pytest.raises(ValueError):
+            await q.get('a', ValueError)
+        with pytest.raises(ValueError):
+            await q.get('b', ValueError)
+        assert (await q.get('a', 'a_default')) == 'a_default'
+        assert (await q.get('b', 'b_default')) == 'b_default'
+
+    await kb.close()
+
+    # Prev database; let it remember the embedding function!
+    kb = AsyncKB(_DB_PATH)
+    async with kb.bulk_keyval_update() as q:
+        assert (await q.count()) == 0
+        assert not (await q.has('a'))
+        assert not (await q.has('b'))
+        with pytest.raises(KeyError):
+            await q.get('a')
+        with pytest.raises(KeyError):
+            await q.get('b')
+        with pytest.raises(ValueError):
+            await q.get('a', ValueError)
+        with pytest.raises(ValueError):
+            await q.get('b', ValueError)
+        assert (await q.get('a', 'a_default')) == 'a_default'
+        assert (await q.get('b', 'b_default')) == 'b_default'
+
+        await q.set('reason', 'because')
+        await q.set('answer', 42)
+        await q.set('age', 87.5)
+
+        assert set([v async for v in q.items()]) == {
+            ('reason', 'because'),
+            ('answer', 42),
+            ('age', 87.5),
+        }
+
+    await kb.close()
+
+
 def test_kb_init_and_close():
     # New database; not passing an embedding function.
     with pytest.raises(RuntimeError):
@@ -1741,4 +1856,140 @@ def test_kb_vector_magnitude():
     with pytest.raises(ValueError):
         with kb.bulk_add_docs() as add_doc:
             add_doc("...")
+    kb.close()
+
+
+def test_kb_keyval_interface():
+    # New database!
+    kb = KB(_DB_PATH, make_mock_embeddings_func())
+    with kb.bulk_keyval_update() as q:
+        assert q.count() == 0
+        assert not (q.has('a'))
+        assert not (q.has('b'))
+        with pytest.raises(KeyError):
+            q.get('a')
+        with pytest.raises(KeyError):
+            q.get('b')
+        with pytest.raises(ValueError):
+            q.get('a', ValueError)
+        with pytest.raises(ValueError):
+            q.get('b', ValueError)
+        assert q.get('a', 'a_default') == 'a_default'
+        assert q.get('b', 'b_default') == 'b_default'
+
+        q.set('b', 77)
+
+        assert q.count() == 1
+        assert not (q.has('a'))
+        assert q.has('b')
+        with pytest.raises(KeyError):
+            q.get('a')
+        assert q.get('b') == 77
+        with pytest.raises(ValueError):
+            q.get('a', ValueError)
+        assert q.get('b', ValueError) == 77
+        assert q.get('a', 'a_default') == 'a_default'
+        assert q.get('b', 'b_default') == 77
+
+        q.set('b', 'new_val')
+
+        assert q.count() == 1
+        assert not (q.has('a'))
+        assert q.has('b')
+        with pytest.raises(KeyError):
+            q.get('a')
+        assert q.get('b') == 'new_val'
+        with pytest.raises(ValueError):
+            q.get('a', ValueError)
+        assert q.get('b', ValueError) == 'new_val'
+        assert q.get('a', 'a_default') == 'a_default'
+        assert q.get('b', 'b_default') == 'new_val'
+
+    kb.close()
+
+    # Prev database; let it remember the embedding function!
+    kb = KB(_DB_PATH)
+    with kb.bulk_keyval_update() as q:
+        assert q.count() == 1
+        assert not (q.has('a'))
+        assert q.has('b')
+        with pytest.raises(KeyError):
+            q.get('a')
+        assert q.get('b') == 'new_val'
+        with pytest.raises(ValueError):
+            q.get('a', ValueError)
+        assert q.get('b', ValueError) == 'new_val'
+        assert q.get('a', 'a_default') == 'a_default'
+        assert q.get('b', 'b_default') == 'new_val'
+
+        with pytest.raises(KeyError):
+            q.remove('dne')
+
+        q.remove('b')
+
+        assert q.count() == 0
+        assert not (q.has('a'))
+        assert not (q.has('b'))
+        with pytest.raises(KeyError):
+            q.get('a')
+        with pytest.raises(KeyError):
+            q.get('b')
+        with pytest.raises(ValueError):
+            q.get('a', ValueError)
+        with pytest.raises(ValueError):
+            q.get('b', ValueError)
+        assert q.get('a', 'a_default') == 'a_default'
+        assert q.get('b', 'b_default') == 'b_default'
+
+    kb.close()
+
+    # Prev database; let it remember the embedding function!
+    kb = KB(_DB_PATH)
+    with kb.bulk_keyval_update() as q:
+        assert q.count() == 0
+        assert not (q.has('a'))
+        assert not (q.has('b'))
+        with pytest.raises(KeyError):
+            q.get('a')
+        with pytest.raises(KeyError):
+            q.get('b')
+        with pytest.raises(ValueError):
+            q.get('a', ValueError)
+        with pytest.raises(ValueError):
+            q.get('b', ValueError)
+        assert q.get('a', 'a_default') == 'a_default'
+        assert q.get('b', 'b_default') == 'b_default'
+
+        q.set('reason', 'because')
+        q.set('answer', 42)
+        q.set('age', 87.5)
+
+        assert set(q.items()) == {
+            ('reason', 'because'),
+            ('answer', 42),
+            ('age', 87.5),
+        }
+
+        assert set(q) == {
+            'reason',
+            'answer',
+            'age',
+        }
+
+        assert 'a' not in q
+        assert 'reason' in q
+
+        assert q['reason'] == 'because'
+        assert q['answer'] == 42
+        with pytest.raises(KeyError):
+            q['dne']
+
+        q['a'] = 5
+        assert 'a' in q
+        assert q['a'] == 5
+        del q['a']
+        assert 'a' not in q
+
+        assert len(q) == 3
+
     kb.close()

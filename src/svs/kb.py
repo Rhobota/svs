@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import contextmanager, asynccontextmanager
+import inspect
 import sqlite3
 import json
 import gzip
@@ -26,8 +27,10 @@ from .embeddings import (
 )
 
 from .types import (
-    AsyncDocumentAdder, AsyncDocumentDeleter, AsyncDocumentQuerier, AsyncGraphInterface,
-    DocumentAdder, DocumentDeleter, DocumentQuerier, GraphInterface,
+    AsyncDocumentAdder, AsyncDocumentDeleter, AsyncDocumentQuerier,
+    AsyncGraphInterface, AsyncKeyValueInterface,
+    DocumentAdder, DocumentDeleter, DocumentQuerier,
+    GraphInterface, KeyValueInterface,
     DocumentId, DocumentRecord, EdgeId, NetworkXGraphTypes,
     EmbeddingFunc, Retrieval,
 )
@@ -61,7 +64,13 @@ _SCHEMA_VERSION = 1   # !!! IF YOU CHANGE THE SCHEMA, BUMP THIS VERSION AND WRIT
 
 _TABLE_DEFS = """
 
-CREATE TABLE IF NOT EXISTS keyval (
+CREATE TABLE IF NOT EXISTS keyval (   -- FOR SVS'S INTERNAL NEEDS
+    id INTEGER PRIMARY KEY,
+    key TEXT NOT NULL UNIQUE,
+    val ANY NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS keyval_user (   -- FOR THE USER'S NEEDS
     id INTEGER PRIMARY KEY,
     key TEXT NOT NULL UNIQUE,
     val ANY NOT NULL
@@ -173,6 +182,90 @@ class _Querier:
         )
         if res.rowcount == 0:
             raise KeyError(key)
+
+    def get_key_user(self, key: str) -> Any:
+        res = self.conn.execute(
+            """
+            SELECT val
+            FROM keyval_user
+            WHERE key = ?;
+            """,
+            (key,),
+        )
+        row = res.fetchone()
+        if row is None:
+            raise KeyError(key)
+        return row[0]
+
+    def set_key_user(self, key: str, val: Any) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO keyval_user (key, val) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                val = excluded.val;
+            """,
+            (key, val),
+        )
+
+    def del_key_user(self, key: str) -> None:
+        res = self.conn.execute(
+            """
+            DELETE
+            FROM keyval_user
+            WHERE key = ?;
+            """,
+            (key,),
+        )
+        if res.rowcount == 0:
+            raise KeyError(key)
+
+    def has_key_user(self, key: str) -> bool:
+        res = self.conn.execute(
+            """
+            SELECT key
+            FROM keyval_user
+            WHERE key = ?;
+            """,
+            (key,),
+        )
+        row = res.fetchone()
+        return row is not None
+
+    def count_keys_user(self) -> int:
+        res = self.conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM keyval_user;
+            """,
+            (),
+        )
+        row = res.fetchone()
+        assert row is not None
+        n = row[0]
+        assert isinstance(n, int)
+        return n
+
+    def keyval_user_iterate(self) -> Iterator[Tuple[str, Any]]:
+        res = self.conn.execute(
+            """
+            SELECT key, val
+            FROM keyval_user;
+            """,
+            (),
+        )
+        for key, val in res:
+            yield key, val
+
+    def key_user_iterate(self) -> Iterator[str]:
+        res = self.conn.execute(
+            """
+            SELECT key
+            FROM keyval_user;
+            """,
+            (),
+        )
+        for key, in res:
+            yield key
 
     def count_docs(self) -> int:
         res = self.conn.execute(
@@ -1193,6 +1286,86 @@ class AsyncKB:
                 finally:
                     in_context_manager = False
 
+    @asynccontextmanager
+    async def bulk_keyval_update(
+        self,
+    ) -> AsyncIterator[AsyncKeyValueInterface]:
+        loop = asyncio.get_running_loop()
+        async with self.db_lock:
+            db = await self._ensure_db()
+            async with db as q:
+                in_context_manager = True
+                lock = asyncio.Lock()
+                class Querier(AsyncKeyValueInterface):
+                    async def has(self, key: str) -> bool:
+                        assert in_context_manager, "You may not call this function outside of the context manager!"
+                        async with lock:
+                            def heavy() -> bool:
+                                return q.has_key_user(key)
+                            return await loop.run_in_executor(None, heavy)
+
+                    async def get(self, key: str, default: Any = KeyError) -> Any:
+                        assert in_context_manager, "You may not call this function outside of the context manager!"
+                        async with lock:
+                            def heavy() -> Any:
+                                try:
+                                    return q.get_key_user(key)
+                                except KeyError:
+                                    if inspect.isclass(default):
+                                        if issubclass(default, KeyError):
+                                            raise
+                                        elif issubclass(default, Exception):
+                                            raise default()
+                                    return default
+                            return await loop.run_in_executor(None, heavy)
+
+                    async def set(self, key: str, val: Any) -> None:
+                        assert in_context_manager, "You may not call this function outside of the context manager!"
+                        async with lock:
+                            def heavy() -> None:
+                                return q.set_key_user(key, val)
+                            return await loop.run_in_executor(None, heavy)
+
+                    async def remove(self, key: str) -> None:
+                        assert in_context_manager, "You may not call this function outside of the context manager!"
+                        async with lock:
+                            def heavy() -> None:
+                                return q.del_key_user(key)
+                            return await loop.run_in_executor(None, heavy)
+
+                    async def count(self) -> int:
+                        assert in_context_manager, "You may not call this function outside of the context manager!"
+                        async with lock:
+                            def heavy() -> int:
+                                return q.count_keys_user()
+                            return await loop.run_in_executor(None, heavy)
+
+                    async def items(self) -> AsyncIterator[Tuple[str, Any]]:
+                        assert in_context_manager, "You may not call this function outside of the context manager!"
+                        async with lock:
+                            queue: asyncio.Queue[Union[Tuple[str, Any], None, Exception]] = asyncio.Queue()
+                            def heavy() -> None:
+                                try:
+                                    for item in q.keyval_user_iterate():
+                                        loop.call_soon_threadsafe(queue.put_nowait, item)
+                                    loop.call_soon_threadsafe(queue.put_nowait, None)
+                                except Exception as e:
+                                    loop.call_soon_threadsafe(queue.put_nowait, e)
+                            task = loop.run_in_executor(None, heavy)
+                            while True:
+                                item = await queue.get()
+                                if item is None:
+                                    break
+                                elif isinstance(item, Exception):
+                                    raise item
+                                yield item
+                            await task
+
+                try:
+                    yield Querier()
+                finally:
+                    in_context_manager = False
+
 
 def _loop_main(loop: asyncio.AbstractEventLoop) -> None:
     asyncio.set_event_loop(loop)
@@ -1503,6 +1676,72 @@ class KB:
                 ) -> NetworkXGraphTypes:
                     assert in_context_manager, "You may not call this function outside of the context manager!"
                     return q.build_networkx_graph(multigraph)
+
+            try:
+                yield Querier()
+            finally:
+                in_context_manager = False
+
+    @contextmanager
+    def bulk_keyval_update(
+        self,
+    ) -> Iterator[KeyValueInterface]:
+        assert self.db is not None
+        with self.db as q:
+            in_context_manager = True
+            class Querier(KeyValueInterface):
+                def has(self, key: str) -> bool:
+                    assert in_context_manager, "You may not call this function outside of the context manager!"
+                    return q.has_key_user(key)
+
+                def __contains__(self, key: str) -> bool:
+                    return self.has(key)
+
+                def get(self, key: str, default: Any = KeyError) -> Any:
+                    assert in_context_manager, "You may not call this function outside of the context manager!"
+                    try:
+                        return q.get_key_user(key)
+                    except KeyError:
+                        if inspect.isclass(default):
+                            if issubclass(default, KeyError):
+                                raise
+                            elif issubclass(default, Exception):
+                                raise default()
+                        return default
+
+                def __getitem__(self, key: str) -> Any:
+                    return self.get(key)
+
+                def set(self, key: str, val: Any) -> None:
+                    assert in_context_manager, "You may not call this function outside of the context manager!"
+                    return q.set_key_user(key, val)
+
+                def __setitem__(self, key: str, val: Any) -> None:
+                    return self.set(key, val)
+
+                def remove(self, key: str) -> None:
+                    assert in_context_manager, "You may not call this function outside of the context manager!"
+                    return q.del_key_user(key)
+
+                def __delitem__(self, key: str) -> None:
+                    return self.remove(key)
+
+                def count(self) -> int:
+                    assert in_context_manager, "You may not call this function outside of the context manager!"
+                    return q.count_keys_user()
+
+                def __len__(self) -> int:
+                    return self.count()
+
+                def items(self) -> Iterator[Tuple[str, Any]]:
+                    assert in_context_manager, "You may not call this function outside of the context manager!"
+                    for item in q.keyval_user_iterate():
+                        yield item
+
+                def __iter__(self) -> Iterator[str]:
+                    assert in_context_manager, "You may not call this function outside of the context manager!"
+                    for key in q.key_user_iterate():
+                        yield key
 
             try:
                 yield Querier()
