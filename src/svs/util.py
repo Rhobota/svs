@@ -36,11 +36,12 @@ def locked(
     Decorator for async functions to lock them so that they can only be
     executed *serially* (rather than *currently*).
     """
-    if lock is None:
-        lock = asyncio.Lock()
     def decorator(wrapped: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
         @functools.wraps(wrapped)
         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            nonlocal lock
+            if lock is None:
+                lock = asyncio.Lock()
             async with lock:
                 return await wrapped(*args, **kwargs)
         return wrapper
