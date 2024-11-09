@@ -919,11 +919,16 @@ class AsyncKB:
     ):
         self.local_path_or_remote_url = local_path_or_remote_url
         self.db: Union[_DB, None] = None
-        self.db_lock = asyncio.Lock()
+        self.db_lock: Union[asyncio.Lock, None] = None
         self.embedding_func = embedding_func
         self.embedding_func_orig = embedding_func
         self.embeddings_matrix = _EmbeddingsMatrix()
         self.force_fresh_db = force_fresh_db
+
+    def _get_lock(self) -> asyncio.Lock:
+        if self.db_lock is None:
+            self.db_lock = asyncio.Lock()
+        return self.db_lock
 
     async def _ensure_db(self) -> _DB:
         if self.db is None:
@@ -943,7 +948,7 @@ class AsyncKB:
         return self.db
 
     async def load(self) -> None:
-        async with self.db_lock:
+        async with self._get_lock():
             db = await self._ensure_db()
             await self.embeddings_matrix.get(db)
 
@@ -952,7 +957,7 @@ class AsyncKB:
         vacuum: bool = False,
         also_gzip: bool = False,
     ) -> None:
-        async with self.db_lock:
+        async with self._get_lock():
             db = await self._ensure_db()
             def heavy() -> Union[Path, str]:
                 if vacuum:
@@ -998,7 +1003,7 @@ class AsyncKB:
         self,
     ) -> AsyncIterator[AsyncDocumentAdder]:
         loop = asyncio.get_running_loop()
-        async with self.db_lock:
+        async with self._get_lock():
             db = await self._ensure_db()
             async with db as q:
                 in_context_manager = True
@@ -1046,7 +1051,7 @@ class AsyncKB:
         self,
     ) -> AsyncIterator[AsyncDocumentDeleter]:
         loop = asyncio.get_running_loop()
-        async with self.db_lock:
+        async with self._get_lock():
             db = await self._ensure_db()
             async with db as q:
                 in_context_manager = True
@@ -1070,7 +1075,7 @@ class AsyncKB:
         self,
     ) -> AsyncIterator[AsyncDocumentQuerier]:
         loop = asyncio.get_running_loop()
-        async with self.db_lock:
+        async with self._get_lock():
             db = await self._ensure_db()
             async with db as q:
                 in_context_manager = True
@@ -1143,7 +1148,7 @@ class AsyncKB:
     ) -> List[Retrieval]:
         _LOG.info(f"retrieving {n} documents with query string: {query}")
         loop = asyncio.get_running_loop()
-        async with self.db_lock:
+        async with self._get_lock():
             db = await self._ensure_db()
             embeddings_matrix, emb_id_lookup = await self.embeddings_matrix.get(db)
         func = await self._get_embedding_func()
@@ -1157,7 +1162,7 @@ class AsyncKB:
             return emb_ids
         emb_ids = await loop.run_in_executor(None, superheavy)
         _LOG.info(f"computed {embeddings_matrix.shape[0]} cosine similarities")
-        async with self.db_lock:
+        async with self._get_lock():
             db = await self._ensure_db()
             async with db as q:
                 def heavy() -> List[Retrieval]:
@@ -1178,7 +1183,7 @@ class AsyncKB:
         n: int,
     ) -> List[Tuple[float, DocumentRecord, DocumentRecord]]:
         loop = asyncio.get_running_loop()
-        async with self.db_lock:
+        async with self._get_lock():
             db = await self._ensure_db()
             embeddings_matrix, emb_id_lookup = await self.embeddings_matrix.get(db)
         n_docs = len(emb_id_lookup)
@@ -1191,7 +1196,7 @@ class AsyncKB:
             ]
         pairwise_scores = await loop.run_in_executor(None, superheavy)
         _LOG.info(f"computed {n_docs * n_docs} pairwise cosine similarities")
-        async with self.db_lock:
+        async with self._get_lock():
             db = await self._ensure_db()
             async with db as q:
                 def heavy() -> List[Tuple[float, DocumentRecord, DocumentRecord]]:
@@ -1215,7 +1220,7 @@ class AsyncKB:
         self,
     ) -> AsyncIterator[AsyncGraphInterface]:
         loop = asyncio.get_running_loop()
-        async with self.db_lock:
+        async with self._get_lock():
             db = await self._ensure_db()
             async with db as q:
                 in_context_manager = True
@@ -1291,7 +1296,7 @@ class AsyncKB:
         self,
     ) -> AsyncIterator[AsyncKeyValueInterface]:
         loop = asyncio.get_running_loop()
-        async with self.db_lock:
+        async with self._get_lock():
             db = await self._ensure_db()
             async with db as q:
                 in_context_manager = True
