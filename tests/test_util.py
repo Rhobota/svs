@@ -372,12 +372,12 @@ def test_get_top_k():
 
 def test_get_top_pairs():
     with pytest.raises(AssertionError):
-        matrix = np.zeros((3, 2, 5))   # <-- not 2D
-        get_top_pairs(matrix, top_k=3)
+        matrix_1 = np.zeros((3, 2, 5))   # <-- not 2D
+        get_top_pairs(matrix_1, top_k=3)
 
     with pytest.raises(AssertionError):
-        matrix = np.zeros((3, 2))   # <-- not square!
-        get_top_pairs(matrix, top_k=3)
+        matrix_2 = np.zeros((3, 2))   # <-- not square!
+        get_top_pairs(matrix_2, top_k=3)
 
     matrix = np.zeros((0, 0))    # <-- 0x0 matrix
     top = get_top_pairs(matrix, top_k=3)
