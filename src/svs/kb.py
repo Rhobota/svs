@@ -8,6 +8,7 @@ import shutil
 from datetime import datetime, timezone
 from threading import Thread
 from pathlib import Path
+import os
 
 from types import TracebackType
 from typing import (
@@ -972,9 +973,11 @@ class AsyncKB:
                 def heavy2() -> None:
                     _LOG.info(f"AsyncKB.close(): starting gzip...")
                     dest_path = f'{path}.gz'
+                    tmp_filepath = f'{dest_path}.tmp'
                     with open(path, 'rb') as from_f:
-                        with gzip.open(dest_path, 'wb') as to_f:
+                        with gzip.open(tmp_filepath, 'wb') as to_f:
                             shutil.copyfileobj(from_f, to_f)
+                        os.replace(tmp_filepath, dest_path)
                     _LOG.info(f"AsyncKB.close(): finished gzip: {dest_path}")
                 await asyncio.get_running_loop().run_in_executor(None, heavy2)
 
@@ -1429,9 +1432,11 @@ class KB:
             if also_gzip:
                 _LOG.info(f"KB.close(): starting gzip...")
                 dest_path = f'{path}.gz'
+                tmp_filepath = f'{dest_path}.tmp'
                 with open(path, 'rb') as from_f:
-                    with gzip.open(dest_path, 'wb') as to_f:
+                    with gzip.open(tmp_filepath, 'wb') as to_f:
                         shutil.copyfileobj(from_f, to_f)
+                    os.replace(tmp_filepath, dest_path)
                 _LOG.info(f"KB.close(): finished gzip: {dest_path}")
 
     def _get_embedding_func(self) -> EmbeddingFunc:

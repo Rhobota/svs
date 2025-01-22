@@ -108,9 +108,12 @@ async def file_cached_wget(url: str) -> Path:
     in the future...
     """
     loop = asyncio.get_running_loop()
+
     hash = hashlib.sha256(url.encode()).hexdigest()
     extension = os.path.splitext(urlparse(url).path)[1]
     path = Path('.remote_cache') / Path(f'{hash}{extension}')
+    tmp_filepath = path.with_suffix(path.suffix + '.tmp')
+
     def _check_exists() -> bool:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         return os.path.exists(path)
@@ -119,30 +122,18 @@ async def file_cached_wget(url: str) -> Path:
         _LOG.info(f"file_cached_wget({repr(url)}): CACHE HIT")
         return path
     _LOG.info(f"file_cached_wget({repr(url)}): cache miss ... will *get*")
-    f = await loop.run_in_executor(None, open, path, 'wb')
-    closed: bool = False
-    try:
+
+    # Ideally we'd do all filesystem ops *not* in the event loop's thread,
+    # but for simplicity (and because these ops should be "fast enough")
+    # I'm doing *some* ops in the event loop's thread below:
+    with open(tmp_filepath, 'wb') as f:
         async with aiohttp.ClientSession(raise_for_status=True) as session:
             async with session.get(url) as response:
                 async for data in response.content.iter_chunked(4096 * 4096):
                     await loop.run_in_executor(None, f.write, data)
-        await loop.run_in_executor(None, f.close)
-        closed = True
-        _LOG.info(f"file_cached_wget({repr(url)}): *get* complete!")
-        return path
-    except Exception as e:
-        _LOG.error(f"file_cached_wget({repr(url)}): *get* failed: {e}")
-        try:
-            # It's important we don't accidentally leave opened and/or
-            # partially-written files!
-            if not closed:
-                await loop.run_in_executor(None, f.close)
-                closed = True
-            await loop.run_in_executor(None, os.unlink, path)
-        except Exception as e2:
-            # We tried our best; nothing we can do now except log this.
-            _LOG.exception(e2)
-        raise e
+    os.replace(tmp_filepath, path)
+    _LOG.info(f"file_cached_wget({repr(url)}): *get* complete!")
+    return path
 
 
 def _is_remote_or_local(local_path_or_remote_url: str) -> Tuple[bool, str]:
@@ -171,6 +162,7 @@ async def resolve_to_local_uncompressed_file(local_path_or_remote_url: str) -> P
 
     base_name, extension = os.path.splitext(local_path)
     base_name = Path(base_name)
+    tmp_filepath = base_name.with_suffix(base_name.suffix + '.tmp')
 
     if extension == '.gz':
         _LOG.info(f"resolve_to_local_uncompressed_file({repr(local_path_or_remote_url)}): found gzipped file")
@@ -182,8 +174,9 @@ async def resolve_to_local_uncompressed_file(local_path_or_remote_url: str) -> P
                     return
             _LOG.info(f"resolve_to_local_uncompressed_file({repr(local_path_or_remote_url)}): starting gunzip...")
             with gzip.open(local_path, 'rb') as from_f:
-                with open(base_name, 'wb') as to_f:
+                with open(tmp_filepath, 'wb') as to_f:
                     shutil.copyfileobj(from_f, to_f)
+            os.replace(tmp_filepath, base_name)
             _LOG.info(f"resolve_to_local_uncompressed_file({repr(local_path_or_remote_url)}): finished gunzip!")
         await loop.run_in_executor(None, gunzip)
         return base_name
