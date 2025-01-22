@@ -4,6 +4,7 @@ import random
 import os
 import gzip
 from pathlib import Path
+import time
 
 import numpy as np
 
@@ -72,6 +73,7 @@ async def test_file_cached_wget():
     assert len(data1) == 23123
 
     path2 = await file_cached_wget(url)
+    assert path1 == path2
     with open(path2, 'rb') as f:
         data2 = f.read()
     assert data1 == data2
@@ -81,6 +83,11 @@ async def test_file_cached_wget():
 async def test_resolve_to_local_uncompressed_file():
     filepath = './test.txt'
     filepath_gz = f'{filepath}.gz'
+
+    with open(filepath, 'wt') as f:
+        f.write('this will be overridden')
+    new_time = time.time() - 60  # timestamp this file as 1 minute in the past
+    os.utime(filepath, (new_time, new_time))
 
     with gzip.open(filepath_gz, 'wt') as f:
         f.write('this is a test')
