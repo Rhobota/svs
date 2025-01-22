@@ -977,7 +977,7 @@ class AsyncKB:
                     with open(path, 'rb') as from_f:
                         with gzip.open(tmp_filepath, 'wb') as to_f:
                             shutil.copyfileobj(from_f, to_f)
-                        os.rename(tmp_filepath, dest_path)
+                        os.replace(tmp_filepath, dest_path)
                     _LOG.info(f"AsyncKB.close(): finished gzip: {dest_path}")
                 await asyncio.get_running_loop().run_in_executor(None, heavy2)
 
@@ -1436,7 +1436,7 @@ class KB:
                 with open(path, 'rb') as from_f:
                     with gzip.open(tmp_filepath, 'wb') as to_f:
                         shutil.copyfileobj(from_f, to_f)
-                    os.rename(tmp_filepath, dest_path)
+                    os.replace(tmp_filepath, dest_path)
                 _LOG.info(f"KB.close(): finished gzip: {dest_path}")
 
     def _get_embedding_func(self) -> EmbeddingFunc:

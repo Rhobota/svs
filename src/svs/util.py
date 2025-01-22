@@ -112,7 +112,7 @@ async def file_cached_wget(url: str) -> Path:
     hash = hashlib.sha256(url.encode()).hexdigest()
     extension = os.path.splitext(urlparse(url).path)[1]
     path = Path('.remote_cache') / Path(f'{hash}{extension}')
-    tmp_filepath = path.with_suffix('.tmp')
+    tmp_filepath = path.with_suffix(path.suffix + '.tmp')
 
     def _check_exists() -> bool:
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -131,7 +131,7 @@ async def file_cached_wget(url: str) -> Path:
             async with session.get(url) as response:
                 async for data in response.content.iter_chunked(4096 * 4096):
                     await loop.run_in_executor(None, f.write, data)
-    os.rename(tmp_filepath, path)
+    os.replace(tmp_filepath, path)
     _LOG.info(f"file_cached_wget({repr(url)}): *get* complete!")
     return path
 
@@ -162,7 +162,7 @@ async def resolve_to_local_uncompressed_file(local_path_or_remote_url: str) -> P
 
     base_name, extension = os.path.splitext(local_path)
     base_name = Path(base_name)
-    tmp_filepath = base_name.with_suffix('.tmp')
+    tmp_filepath = base_name.with_suffix(base_name.suffix + '.tmp')
 
     if extension == '.gz':
         _LOG.info(f"resolve_to_local_uncompressed_file({repr(local_path_or_remote_url)}): found gzipped file")
@@ -176,7 +176,7 @@ async def resolve_to_local_uncompressed_file(local_path_or_remote_url: str) -> P
             with gzip.open(local_path, 'rb') as from_f:
                 with open(tmp_filepath, 'wb') as to_f:
                     shutil.copyfileobj(from_f, to_f)
-            os.rename(tmp_filepath, base_name)
+            os.replace(tmp_filepath, base_name)
             _LOG.info(f"resolve_to_local_uncompressed_file({repr(local_path_or_remote_url)}): finished gunzip!")
         await loop.run_in_executor(None, gunzip)
         return base_name
