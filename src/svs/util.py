@@ -10,7 +10,6 @@ import gzip
 import shutil
 from urllib.parse import urlparse
 from pathlib import Path
-import tempfile
 
 import numpy as np
 
@@ -113,6 +112,7 @@ async def file_cached_wget(url: str) -> Path:
     hash = hashlib.sha256(url.encode()).hexdigest()
     extension = os.path.splitext(urlparse(url).path)[1]
     path = Path('.remote_cache') / Path(f'{hash}{extension}')
+    tmp_filepath = path.with_suffix('.tmp')
 
     def _check_exists() -> bool:
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -126,16 +126,14 @@ async def file_cached_wget(url: str) -> Path:
     # Ideally we'd do all filesystem ops *not* in the event loop's thread,
     # but for simplicity (and because these ops should be "fast enough")
     # I'm doing *some* ops in the event loop's thread below:
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_filepath = os.path.join(tmp, 'partial_download')
-        with open(tmp_filepath, 'wb') as f:
-            async with aiohttp.ClientSession(raise_for_status=True) as session:
-                async with session.get(url) as response:
-                    async for data in response.content.iter_chunked(4096 * 4096):
-                        await loop.run_in_executor(None, f.write, data)
-        os.rename(tmp_filepath, path)
-        _LOG.info(f"file_cached_wget({repr(url)}): *get* complete!")
-        return path
+    with open(tmp_filepath, 'wb') as f:
+        async with aiohttp.ClientSession(raise_for_status=True) as session:
+            async with session.get(url) as response:
+                async for data in response.content.iter_chunked(4096 * 4096):
+                    await loop.run_in_executor(None, f.write, data)
+    os.rename(tmp_filepath, path)
+    _LOG.info(f"file_cached_wget({repr(url)}): *get* complete!")
+    return path
 
 
 def _is_remote_or_local(local_path_or_remote_url: str) -> Tuple[bool, str]:
@@ -164,6 +162,7 @@ async def resolve_to_local_uncompressed_file(local_path_or_remote_url: str) -> P
 
     base_name, extension = os.path.splitext(local_path)
     base_name = Path(base_name)
+    tmp_filepath = base_name.with_suffix('.tmp')
 
     if extension == '.gz':
         _LOG.info(f"resolve_to_local_uncompressed_file({repr(local_path_or_remote_url)}): found gzipped file")
@@ -174,12 +173,10 @@ async def resolve_to_local_uncompressed_file(local_path_or_remote_url: str) -> P
                     _LOG.info(f"resolve_to_local_uncompressed_file({repr(local_path_or_remote_url)}): previously-gunzipped file is still fresh")
                     return
             _LOG.info(f"resolve_to_local_uncompressed_file({repr(local_path_or_remote_url)}): starting gunzip...")
-            with tempfile.TemporaryDirectory() as tmp:
-                tmp_filepath = os.path.join(tmp, 'partial_gunzip')
-                with gzip.open(local_path, 'rb') as from_f:
-                    with open(tmp_filepath, 'wb') as to_f:
-                        shutil.copyfileobj(from_f, to_f)
-                os.rename(tmp_filepath, base_name)
+            with gzip.open(local_path, 'rb') as from_f:
+                with open(tmp_filepath, 'wb') as to_f:
+                    shutil.copyfileobj(from_f, to_f)
+            os.rename(tmp_filepath, base_name)
             _LOG.info(f"resolve_to_local_uncompressed_file({repr(local_path_or_remote_url)}): finished gunzip!")
         await loop.run_in_executor(None, gunzip)
         return base_name
