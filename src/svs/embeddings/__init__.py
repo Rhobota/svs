@@ -13,6 +13,8 @@ from .mock import make_mock_embeddings_func
 
 from .openai import make_openai_embeddings_func
 
+from .ollama import make_ollama_embeddings_func
+
 
 def make_embeddings_func(
     embedding_func_params: Dict[str, Any],
@@ -23,6 +25,8 @@ def make_embeddings_func(
         return make_mock_embeddings_func(**embedding_func_params)
     elif provider == 'openai':
         return make_openai_embeddings_func(**embedding_func_params)
+    elif provider == 'ollama':
+        return make_ollama_embeddings_func(**embedding_func_params)
     else:
         raise ValueError(f"unknown embedding provider name: {provider}")
 
@@ -34,5 +38,6 @@ __all__ = [
     'wrap_embeddings_func_check_magnitude',
     'make_mock_embeddings_func',
     'make_openai_embeddings_func',
+    'make_ollama_embeddings_func',
     'make_embeddings_func',
 ]

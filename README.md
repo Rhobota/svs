@@ -10,6 +10,7 @@
 - 🤔 What is SVS?
   - Semantic search via deep-learning vector embeddings.
   - A stupid-simple library for storing and retrieving your documents.
+  - Currently support OpenAI and Ollama.
 
 - 💩 Why is it _stupid_?
   - Because it just uses [SQLite](https://www.sqlite.org/) and [NumPy](https://numpy.org/). Nothing fancy.
