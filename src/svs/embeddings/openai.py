@@ -17,7 +17,7 @@ def make_openai_embeddings_func(
     user: Optional[str] = None,
 ) -> EmbeddingFunc:
     if api_key is None:
-        api_key = os.environ['OPENAI_API_KEY']
+        api_key = os.environ.get('OPENAI_API_KEY', None)
 
     params = {
         'provider': 'openai',
@@ -31,6 +31,9 @@ def make_openai_embeddings_func(
         assert isinstance(list_of_strings, list)
         for s in list_of_strings:
             assert isinstance(s, str)
+
+        if api_key is None:
+            raise RuntimeError('No OpenAI API key found! It was not passed to the function nor was it in the OPENAI_API_KEY environment variable.')
 
         results = await _cached_openai_embeddings_endpoint(
             api_key,

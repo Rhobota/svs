@@ -11,9 +11,6 @@ from ..util import cached
 from ..types import EmbeddingFunc
 
 
-OLLAMA_BASE_URL = os.environ.get('OLLAMA_BASE_URL', 'http://127.0.0.1:11434')
-
-
 def make_ollama_embeddings_func(
     model: str,
     truncate: bool = True,
@@ -26,6 +23,8 @@ def make_ollama_embeddings_func(
         'keep_alive': keep_alive,
     }
 
+    base_url = os.environ.get('OLLAMA_BASE_URL', 'http://127.0.0.1:11434')
+
     async def ollama_embeddings(
         list_of_strings: List[str],
     ) -> List[List[float]]:
@@ -34,6 +33,7 @@ def make_ollama_embeddings_func(
             assert isinstance(s, str)
 
         data = await _cached_ollama_embeddings_endpoint(
+            base_url,
             tuple(list_of_strings),
             model,
             truncate,
@@ -59,12 +59,13 @@ def make_ollama_embeddings_func(
 
 @cached(maxsize=EMBEDDINGS_MAX_CACHE_SIZE)
 async def _cached_ollama_embeddings_endpoint(
+    base_url: str,
     tuple_of_strings: Tuple,
     model: str,
     truncate: bool,
     keep_alive: str,
 ) -> Any:
-    url = f'{OLLAMA_BASE_URL}/api/embed'
+    url = f'{base_url}/api/embed'
 
     payload: Dict[str, Any] = {
         'model': model,
