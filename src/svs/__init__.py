@@ -21,4 +21,4 @@ __all__ = [
     'make_ollama_embeddings_func',
 ]
 
-__version__ = "0.7.0"
+__version__ = "0.7.1"
