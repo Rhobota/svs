@@ -681,7 +681,7 @@ class _Querier:
         row = res.fetchone()
         is_directed_graph = row is not None
 
-        graph = \
+        graph: NetworkXGraphTypes = \
             (nx.MultiDiGraph() if is_directed_graph else nx.MultiGraph()) \
             if multigraph else \
             (nx.DiGraph() if is_directed_graph else nx.Graph())
@@ -914,7 +914,7 @@ class AsyncKB:
 
     def __init__(
         self,
-        local_path_or_remote_url: str,
+        local_path_or_remote_url: Union[Path, str],
         embedding_func: Optional[EmbeddingFunc] = None,
         force_fresh_db: bool = False
     ):
@@ -1385,7 +1385,7 @@ class KB:
 
     def __init__(
         self,
-        local_path_or_remote_url: str,
+        local_path_or_remote_url: Union[Path, str],
         embedding_func: Optional[EmbeddingFunc] = None,
         force_fresh_db: bool = False
     ):
