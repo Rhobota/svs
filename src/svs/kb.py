@@ -681,7 +681,7 @@ class _Querier:
         row = res.fetchone()
         is_directed_graph = row is not None
 
-        graph = \
+        graph: NetworkXGraphTypes = \
             (nx.MultiDiGraph() if is_directed_graph else nx.MultiGraph()) \
             if multigraph else \
             (nx.DiGraph() if is_directed_graph else nx.Graph())
