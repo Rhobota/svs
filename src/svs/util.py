@@ -136,7 +136,9 @@ async def file_cached_wget(url: str) -> Path:
     return path
 
 
-def _is_remote_or_local(local_path_or_remote_url: str) -> Tuple[bool, str]:
+def _is_remote_or_local(local_path_or_remote_url: Union[Path, str]) -> Tuple[bool, str]:
+    local_path_or_remote_url = str(local_path_or_remote_url)
+
     parsed_url = urlparse(local_path_or_remote_url)
     if parsed_url.scheme in ('http', 'https'):
         # The string is already a remote URL, so just return it.
@@ -150,7 +152,7 @@ def _is_remote_or_local(local_path_or_remote_url: str) -> Tuple[bool, str]:
     return False, local_path
 
 
-async def resolve_to_local_uncompressed_file(local_path_or_remote_url: str) -> Path:
+async def resolve_to_local_uncompressed_file(local_path_or_remote_url: Union[Path, str]) -> Path:
     loop = asyncio.get_running_loop()
 
     is_remote, local_path_or_remote_url = await loop.run_in_executor(None, _is_remote_or_local, local_path_or_remote_url)

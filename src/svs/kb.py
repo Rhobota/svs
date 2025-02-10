@@ -914,7 +914,7 @@ class AsyncKB:
 
     def __init__(
         self,
-        local_path_or_remote_url: str,
+        local_path_or_remote_url: Union[Path, str],
         embedding_func: Optional[EmbeddingFunc] = None,
         force_fresh_db: bool = False
     ):
@@ -1385,7 +1385,7 @@ class KB:
 
     def __init__(
         self,
-        local_path_or_remote_url: str,
+        local_path_or_remote_url: Union[Path, str],
         embedding_func: Optional[EmbeddingFunc] = None,
         force_fresh_db: bool = False
     ):

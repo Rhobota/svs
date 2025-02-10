@@ -80,7 +80,7 @@ async def test_file_cached_wget():
 
 
 @pytest.mark.asyncio
-async def test_resolve_to_local_uncompressed_file():
+async def test_resolve_to_local_uncompressed_file__str():
     filepath = './test.txt'
     filepath_gz = f'{filepath}.gz'
 
@@ -94,6 +94,29 @@ async def test_resolve_to_local_uncompressed_file():
 
     local = await resolve_to_local_uncompressed_file(filepath_gz)
     assert local == Path(filepath)
+
+    with open(local, 'rt') as f:
+        assert f.read() == 'this is a test'
+
+    os.unlink(filepath)
+    os.unlink(filepath_gz)
+
+
+@pytest.mark.asyncio
+async def test_resolve_to_local_uncompressed_file__Path():
+    filepath = Path('./test.txt')
+    filepath_gz = filepath.with_suffix('.txt.gz')
+
+    with open(filepath, 'wt') as f:
+        f.write('this will be overridden')
+    new_time = time.time() - 60  # timestamp this file as 1 minute in the past
+    os.utime(filepath, (new_time, new_time))
+
+    with gzip.open(filepath_gz, 'wt') as f:
+        f.write('this is a test')
+
+    local = await resolve_to_local_uncompressed_file(filepath_gz)
+    assert local == filepath
 
     with open(local, 'rt') as f:
         assert f.read() == 'this is a test'
