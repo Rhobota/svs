@@ -2,7 +2,7 @@ import aiohttp
 import json
 import os
 
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any, Union
 
 from .util import EMBEDDINGS_MAX_CACHE_SIZE
 
@@ -15,15 +15,15 @@ def make_ollama_embeddings_func(
     model: str,
     truncate: bool = True,
     keep_alive: str = '5m',
+    base_url: Union[str, None] = None,
 ) -> EmbeddingFunc:
     params = {
         'provider': 'ollama',
         'model': model,
         'truncate': truncate,
         'keep_alive': keep_alive,
+        'base_url': base_url,
     }
-
-    base_url = os.environ.get('OLLAMA_BASE_URL', 'http://127.0.0.1:11434')
 
     async def ollama_embeddings(
         list_of_strings: List[str],
@@ -32,8 +32,10 @@ def make_ollama_embeddings_func(
         for s in list_of_strings:
             assert isinstance(s, str)
 
+        base_url_to_use = base_url if base_url else os.environ.get('OLLAMA_BASE_URL', 'http://127.0.0.1:11434')
+
         data = await _cached_ollama_embeddings_endpoint(
-            base_url,
+            base_url_to_use,
             tuple(list_of_strings),
             model,
             truncate,
