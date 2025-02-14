@@ -82,6 +82,11 @@ async def _cached_openai_embeddings_endpoint(
     if user is not None:
         payload['user'] = user
 
-    async with aiohttp.ClientSession(raise_for_status=True) as session:
+    async with aiohttp.ClientSession(raise_for_status=False) as session:
         async with session.post(url, headers=headers, json=payload) as response:
-            return await response.json()
+            status = response.status
+            data = await response.json()
+            if status != 200:
+                message = data.get('error', {}).get('message', str(data))
+                raise RuntimeError(f'OpenAI API error: status={status}, message={message}')
+            return data
