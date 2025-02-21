@@ -344,6 +344,19 @@ class _Querier:
         assert res.lastrowid is not None
         return res.lastrowid
 
+    def update_doc_meta(self, doc_id: DocumentId, new_meta: Optional[Dict[str, Any]]) -> None:
+        new_meta_str = None
+        if new_meta is not None:
+            new_meta_str = json.dumps(new_meta)
+        res = self.conn.execute(
+            """
+            UPDATE docs SET meta = ? WHERE id = ?;
+            """,
+            (new_meta_str, doc_id),
+        )
+        if res.rowcount != 1:
+            raise KeyError(doc_id)
+
     def del_doc(self, doc_id: DocumentId) -> None:
         parent_res = self.conn.execute(
             """
@@ -1139,6 +1152,17 @@ class AsyncKB:
                             async for subdoc in visit(level_0_doc):
                                 yield subdoc
 
+                    async def update_doc_meta(
+                        self,
+                        doc_id: DocumentId,
+                        new_meta: Optional[Dict[str, Any]],
+                    ) -> None:
+                        assert in_context_manager, "You may not call this function outside of the context manager!"
+                        async with lock:
+                            def heavy() -> None:
+                                return q.update_doc_meta(doc_id, new_meta)
+                            return await loop.run_in_executor(None, heavy)
+
                 try:
                     yield Querier()
                 finally:
@@ -1565,6 +1589,14 @@ class KB:
                     for level_0_doc in level_0:
                         for subdoc in visit(level_0_doc):
                             yield subdoc
+
+                def update_doc_meta(
+                    self,
+                    doc_id: DocumentId,
+                    new_meta: Optional[Dict[str, Any]],
+                ) -> None:
+                    assert in_context_manager, "You may not call this function outside of the context manager!"
+                    return q.update_doc_meta(doc_id, new_meta)
 
             try:
                 yield Querier()

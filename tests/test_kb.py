@@ -1151,6 +1151,14 @@ async def test_asynckb_add_del_doc():
                 'embedding': True,
             },
         ]
+        await q.update_doc_meta(5, {'hi': 'mom'})
+        assert (await q.query_doc(3))['meta'] is None              # <-- this remains unchanged
+        assert (await q.query_doc(5))['meta'] == {'hi': 'mom'}     # <-- this is what we updated (we changed it from None to hi-mom}
+        assert (await q.query_doc(4))['meta'] == {'new': 'stuff'}  # <-- this remains unchanged
+        await q.update_doc_meta(5, None)
+        assert (await q.query_doc(3))['meta'] is None              # <-- this remains unchanged
+        assert (await q.query_doc(5))['meta'] is None              # <-- this is what we updated (we changed it back to None)
+        assert (await q.query_doc(4))['meta'] == {'new': 'stuff'}  # <-- this remains unchanged
     await kb.close()
 
     # Prev database; delete more documents:
@@ -1678,6 +1686,14 @@ def test_kb_add_del_doc():
                 'embedding': True,
             },
         ]
+        q.update_doc_meta(5, {'hi': 'mom'})
+        assert q.query_doc(3)['meta'] is None              # <-- this remains unchanged
+        assert q.query_doc(5)['meta'] == {'hi': 'mom'}     # <-- this is what we updated (we changed it from None to hi-mom}
+        assert q.query_doc(4)['meta'] == {'new': 'stuff'}  # <-- this remains unchanged
+        q.update_doc_meta(5, None)
+        assert q.query_doc(3)['meta'] is None              # <-- this remains unchanged
+        assert q.query_doc(5)['meta'] is None              # <-- this is what we updated (we changed it back to None)
+        assert q.query_doc(4)['meta'] == {'new': 'stuff'}  # <-- this remains unchanged
     kb.close()
 
     # Prev database; delete more documents:

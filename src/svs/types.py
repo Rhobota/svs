@@ -79,6 +79,13 @@ class AsyncDocumentQuerier(abc.ABC):
         include_embedding: bool = False,
     ) -> AsyncIterator[DocumentRecord]: ...
 
+    @abc.abstractmethod
+    async def update_doc_meta(
+        self,
+        doc_id: DocumentId,
+        new_meta: Optional[Dict[str, Any]],
+    ) -> None: ...
+
 
 class AsyncGraphInterface(abc.ABC):
     @abc.abstractmethod
@@ -176,6 +183,13 @@ class DocumentQuerier(abc.ABC):
         self,
         include_embedding: bool = False,
     ) -> Iterator[DocumentRecord]: ...
+
+    @abc.abstractmethod
+    def update_doc_meta(
+        self,
+        doc_id: DocumentId,
+        new_meta: Optional[Dict[str, Any]],
+    ) -> None: ...
 
 
 class GraphInterface(abc.ABC):
