@@ -7,6 +7,8 @@
 ![Test Status](https://github.com/Rhobota/svs/actions/workflows/test.yml/badge.svg?branch=main)
 [![Downloads](https://static.pepy.tech/badge/svs)](https://pepy.tech/project/svs)
 
+- 📚 **Official Docs:** [https://svs.rhobota.com/](https://svs.rhobota.com/)
+
 - 🤔 What is SVS?
   - Semantic search via deep-learning vector embeddings.
   - A stupid-simple library for storing and retrieving your documents.
