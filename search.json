@@ -1,0 +1,42 @@
+[
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "SVS: Documentation",
+    "section": "",
+    "text": "This is the homepage.\nTODO"
+  },
+  {
+    "objectID": "about.html",
+    "href": "about.html",
+    "title": "About",
+    "section": "",
+    "text": "About this site (TODO)",
+    "crumbs": [
+      "Quickstart",
+      "About"
+    ]
+  },
+  {
+    "objectID": "quickstart.html",
+    "href": "quickstart.html",
+    "title": "Quickstart with SVS",
+    "section": "",
+    "text": "!pip install svs\n\n\n\n\nimport svs\n\nprint(svs.__version__)\n\n0.7.4\n\n\n\n\n\n\nfrom svs import KB\n# TODO",
+    "crumbs": [
+      "Quickstart",
+      "Quickstart with SVS"
+    ]
+  },
+  {
+    "objectID": "quickstart.html#installing",
+    "href": "quickstart.html#installing",
+    "title": "Quickstart with SVS",
+    "section": "",
+    "text": "!pip install svs\n\n\n\n\nimport svs\n\nprint(svs.__version__)\n\n0.7.4\n\n\n\n\n\n\nfrom svs import KB\n# TODO",
+    "crumbs": [
+      "Quickstart",
+      "Quickstart with SVS"
+    ]
+  }
+]
