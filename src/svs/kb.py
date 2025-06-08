@@ -1475,7 +1475,9 @@ class KB:
         list_of_strings: List[str],
     ) -> List[bytes]:
         func = self._get_embedding_func()
-        list_of_list_of_floats = asyncio.run_coroutine_threadsafe(func(list_of_strings), self.loop).result()
+        awaitable = func(list_of_strings)
+        assert asyncio.iscoroutine(awaitable)
+        list_of_list_of_floats = asyncio.run_coroutine_threadsafe(awaitable, self.loop).result()
         return [
             embedding_to_bytes(embedding)
             for embedding in list_of_list_of_floats
@@ -1612,7 +1614,9 @@ class KB:
         assert self.db is not None
         embeddings_matrix, emb_id_lookup = self.embeddings_matrix.get_sync(self.db)
         func = self._get_embedding_func()
-        query_list_floats = asyncio.run_coroutine_threadsafe(func([query]), self.loop).result()[0]
+        awaitable = func([query])
+        assert asyncio.iscoroutine(awaitable)
+        query_list_floats = asyncio.run_coroutine_threadsafe(awaitable, self.loop).result()[0]
         query_vec = np.array(query_list_floats, dtype=np.float32)
         _LOG.info("got embedding for query!")
         def superheavy() -> List[Tuple[float, int]]:
