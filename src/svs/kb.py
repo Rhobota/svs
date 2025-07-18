@@ -523,6 +523,22 @@ class _Querier:
         doc_id: DocumentId = row[0]
         return doc_id
 
+    def fetch_embedding_ids_for_docs(self, doc_ids: List[DocumentId]) -> List[int]:
+        res = self.conn.execute(
+            """
+            SELECT embedding
+            FROM docs
+            WHERE
+              id IN ({})
+                AND
+              embedding IS NOT NULL
+            """.format(
+                ','.join('?' * len(doc_ids))
+            ),
+            tuple(doc_ids),
+        )
+        return [row[0] for row in res]
+
     def set_doc_embedding(
         self,
         doc_id: DocumentId,
@@ -612,7 +628,7 @@ class _Querier:
             embedding_here = embedding_from_bytes(row[1])
             assert len(embedding_here) == m
             embeddings_matrix[i] = embedding_here
-            emb_id_lookup[i] = row[0]
+            emb_id_lookup[i] = row[0]  # map matrix index to SQLite id
         assert i == n-1
 
         return embeddings_matrix, emb_id_lookup
@@ -1172,23 +1188,37 @@ class AsyncKB:
         self,
         query: str,
         n: int,
+        candidate_doc_ids: Optional[List[DocumentId]] = None,
     ) -> List[Retrieval]:
         _LOG.info(f"retrieving {n} documents with query string: {query}")
         loop = asyncio.get_running_loop()
+        candidate_embedding_ids: Optional[List[int]] = None
         async with self._get_lock():
             db = await self._ensure_db()
             embeddings_matrix, emb_id_lookup = await self.embeddings_matrix.get(db)
+            if candidate_doc_ids is not None:
+                async with db as q:
+                    candidate_embedding_ids = q.fetch_embedding_ids_for_docs(candidate_doc_ids)
         func = await self._get_embedding_func()
         query_vec = np.array((await func([query]))[0], dtype=np.float32)
         _LOG.info("got embedding for query!")
         def superheavy() -> List[Tuple[float, int]]:
-            x = np.dot(embeddings_matrix, query_vec)  # numpy go brrr
+            if candidate_embedding_ids is not None:
+                mask = np.isin(emb_id_lookup, candidate_embedding_ids)
+                x = np.dot(embeddings_matrix[mask], query_vec)  # numpy go brrr
+                masked_lookup = emb_id_lookup[mask]
+            else:
+                x = np.dot(embeddings_matrix, query_vec)  # numpy go brrr
+                masked_lookup = emb_id_lookup
             emb_ids = []
             for score, index in get_top_k(x, n):
-                emb_ids.append((score, int(emb_id_lookup[index])))
+                emb_ids.append((score, int(masked_lookup[index])))
             return emb_ids
         emb_ids = await loop.run_in_executor(None, superheavy)
-        _LOG.info(f"computed {embeddings_matrix.shape[0]} cosine similarities")
+        if candidate_embedding_ids is not None:
+            _LOG.info(f"computed {len(candidate_embedding_ids)} cosine similarities")
+        else:
+            _LOG.info(f"computed {embeddings_matrix.shape[0]} cosine similarities")
         async with self._get_lock():
             db = await self._ensure_db()
             async with db as q:
@@ -1609,10 +1639,15 @@ class KB:
         self,
         query: str,
         n: int,
+        candidate_doc_ids: Optional[List[DocumentId]] = None,
     ) -> List[Retrieval]:
         _LOG.info(f"retrieving {n} documents with query string: {query}")
         assert self.db is not None
         embeddings_matrix, emb_id_lookup = self.embeddings_matrix.get_sync(self.db)
+        candidate_embedding_ids: Optional[List[int]] = None
+        if candidate_doc_ids is not None:
+            with self.db as q:
+                candidate_embedding_ids = q.fetch_embedding_ids_for_docs(candidate_doc_ids)
         func = self._get_embedding_func()
         awaitable = func([query])
         assert asyncio.iscoroutine(awaitable)
@@ -1620,13 +1655,22 @@ class KB:
         query_vec = np.array(query_list_floats, dtype=np.float32)
         _LOG.info("got embedding for query!")
         def superheavy() -> List[Tuple[float, int]]:
-            x = np.dot(embeddings_matrix, query_vec)  # numpy go brrr
+            if candidate_embedding_ids is not None:
+                mask = np.isin(emb_id_lookup, candidate_embedding_ids)
+                x = np.dot(embeddings_matrix[mask], query_vec)  # numpy go brrr
+                masked_lookup = emb_id_lookup[mask]
+            else:
+                x = np.dot(embeddings_matrix, query_vec)  # numpy go brrr
+                masked_lookup = emb_id_lookup
             emb_ids = []
             for score, index in get_top_k(x, n):
-                emb_ids.append((score, int(emb_id_lookup[index])))
+                emb_ids.append((score, int(masked_lookup[index])))
             return emb_ids
         emb_ids = superheavy()
-        _LOG.info(f"computed {embeddings_matrix.shape[0]} cosine similarities")
+        if candidate_embedding_ids is not None:
+            _LOG.info(f"computed {len(candidate_embedding_ids)} cosine similarities")
+        else:
+            _LOG.info(f"computed {embeddings_matrix.shape[0]} cosine similarities")
         with self.db as q:
             res: List[Retrieval] = []
             for score, emb_id in emb_ids:
