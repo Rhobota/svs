@@ -1780,6 +1780,17 @@ def test_kb_retrieve_et_al():
     assert docs[1]['doc']['text'] == 'first doc'
     assert docs[2]['doc']['text'] == 'second doc'
 
+    # Test candidate_indexes and disqualified_indexes.
+    # Only allow the least similar doc, and make sure that's the one found.
+    # In this case, "second doc" is least similar, which has index == 2.
+    docs = kb.retrieve('... third ...', n=1, candidate_indexes=[2])
+    assert len(docs) == 1
+    assert docs[0]['doc']['text'] == 'second doc'
+    # Same test but using disqualified instead.
+    docs = kb.retrieve('... third ...', n=1, disqualified_indexes=[0, 1])
+    assert len(docs) == 1
+    assert docs[0]['doc']['text'] == 'second doc'
+
     kb.close()
 
     # Pairwise scores:
