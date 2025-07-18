@@ -1892,21 +1892,76 @@ def test_kb_retrieve_et_al():
 
     docs = kb.retrieve('... first ...', n=3)
     assert len(docs) == 3
-    assert docs[0]['doc']['text'] == 'first doc'
-    assert docs[1]['doc']['text'] == 'third doc'
-    assert docs[2]['doc']['text'] == 'second doc'
+    assert docs[0]['doc']['text'] == 'first doc'   # doc id 2
+    assert docs[1]['doc']['text'] == 'third doc'   # doc id 1
+    assert docs[2]['doc']['text'] == 'second doc'  # doc id 3
 
     docs = kb.retrieve('... second ...', n=3)
     assert len(docs) == 3
-    assert docs[0]['doc']['text'] == 'second doc'
-    assert docs[1]['doc']['text'] == 'first doc'
-    assert docs[2]['doc']['text'] == 'third doc'
+    assert docs[0]['doc']['text'] == 'second doc'  # doc id 3
+    assert docs[1]['doc']['text'] == 'first doc'   # doc id 2
+    assert docs[2]['doc']['text'] == 'third doc'   # doc id 1
 
     docs = kb.retrieve('... third ...', n=3)
     assert len(docs) == 3
+    assert docs[0]['doc']['text'] == 'third doc'   # doc id 1
+    assert docs[1]['doc']['text'] == 'first doc'   # doc id 2
+    assert docs[2]['doc']['text'] == 'second doc'  # doc id 3
+
+    docs = kb.retrieve(
+        '... first ...',
+        n=1,
+        candidate_doc_ids=[]
+    )
+    assert len(docs) == 0
+
+    docs = kb.retrieve(
+        '... first ...',
+        n=1,
+        candidate_doc_ids=[2]
+    )
+    assert len(docs) == 1
+    assert docs[0]['doc']['text'] == 'first doc'
+
+    docs = kb.retrieve(
+        '... second ...',
+        n=1,
+        candidate_doc_ids=[2]
+    )
+    assert len(docs) == 1
+    assert docs[0]['doc']['text'] == 'first doc'
+
+    docs = kb.retrieve(
+        '... third ...',
+        n=1,
+        candidate_doc_ids=[2]
+    )
+    assert len(docs) == 1
+    assert docs[0]['doc']['text'] == 'first doc'
+
+    docs = kb.retrieve(
+        '... first ...',
+        n=1,
+        candidate_doc_ids=[1, 3]
+    )
+    assert len(docs) == 1
     assert docs[0]['doc']['text'] == 'third doc'
-    assert docs[1]['doc']['text'] == 'first doc'
-    assert docs[2]['doc']['text'] == 'second doc'
+
+    docs = kb.retrieve(
+        '... second ...',
+        n=1,
+        candidate_doc_ids=[1, 3]
+    )
+    assert len(docs) == 1
+    assert docs[0]['doc']['text'] == 'second doc'
+
+    docs = kb.retrieve(
+        '... third ...',
+        n=1,
+        candidate_doc_ids=[1, 3]
+    )
+    assert len(docs) == 1
+    assert docs[0]['doc']['text'] == 'third doc'
 
     kb.close()
 
@@ -1970,6 +2025,58 @@ def test_kb_retrieve_et_al():
         del_doc(4)
 
     docs = kb.retrieve('... forth ...', n=1)
+    assert len(docs) == 1
+    assert docs[0]['doc']['text'] == 'second doc'
+
+    docs = kb.retrieve(
+        '... first ...',
+        n=1,
+        candidate_doc_ids=[]
+    )
+    assert len(docs) == 0
+
+    docs = kb.retrieve(
+        '... first ...',
+        n=1,
+        candidate_doc_ids=[2]
+    )
+    assert len(docs) == 0
+
+    docs = kb.retrieve(
+        '... second ...',
+        n=1,
+        candidate_doc_ids=[2]
+    )
+    assert len(docs) == 0
+
+    docs = kb.retrieve(
+        '... third ...',
+        n=1,
+        candidate_doc_ids=[2]
+    )
+    assert len(docs) == 0
+
+    docs = kb.retrieve(
+        '... first ...',
+        n=2,
+        candidate_doc_ids=[1, 3]
+    )
+    assert len(docs) == 1
+    assert docs[0]['doc']['text'] == 'second doc'
+
+    docs = kb.retrieve(
+        '... second ...',
+        n=2,
+        candidate_doc_ids=[1, 3]
+    )
+    assert len(docs) == 1
+    assert docs[0]['doc']['text'] == 'second doc'
+
+    docs = kb.retrieve(
+        '... third ...',
+        n=2,
+        candidate_doc_ids=[1, 3]
+    )
     assert len(docs) == 1
     assert docs[0]['doc']['text'] == 'second doc'
 
