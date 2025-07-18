@@ -523,6 +523,19 @@ class _Querier:
         doc_id: DocumentId = row[0]
         return doc_id
 
+    def fetch_embedding_ids_for_docs(self, doc_ids: List[DocumentId]) -> List[int]:
+        res = self.conn.execute(
+            """
+            SELECT embedding
+            FROM docs
+            WHERE id IN ({})
+            """.format(
+                ','.join('?' * len(doc_ids))
+            ),
+            tuple(doc_ids),
+        )
+        return [row[0] for row in res]
+
     def set_doc_embedding(
         self,
         doc_id: DocumentId,
@@ -612,7 +625,7 @@ class _Querier:
             embedding_here = embedding_from_bytes(row[1])
             assert len(embedding_here) == m
             embeddings_matrix[i] = embedding_here
-            emb_id_lookup[i] = row[0]
+            emb_id_lookup[i] = row[0]  # map matrix index to SQLite id
         assert i == n-1
 
         return embeddings_matrix, emb_id_lookup

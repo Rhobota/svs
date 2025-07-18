@@ -380,6 +380,13 @@ def test_doc_table():
     # **Re-open** the database
     db = _DB(_DB_PATH)
     with db as q:
+        assert q.fetch_embedding_ids_for_docs([1, 2, 3, 4, 5, 6]) == \
+            [1, 2, 3, 4, None, 5]
+    db.close()
+
+    # **Re-open** the database
+    db = _DB(_DB_PATH)
+    with db as q:
         with pytest.raises(RuntimeError):
             # This is a parent, so we can't delete it until we delete its children.
             q.del_doc(2)
