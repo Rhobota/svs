@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 from pathlib import Path
 
 import numpy as np
+from numpy.typing import NDArray
 
 from typing import (
     Optional, Union, Dict, List, Tuple,
@@ -231,6 +232,31 @@ def get_top_pairs(pairwise_scores_as_matrix: np.ndarray, top_k: int) -> List[Tup
         )
         for score, index_index in top
     ]
+
+
+def resolve_indexes_type(indexes: Union[NDArray[np.int32], List[int]]) -> NDArray[np.int32]:
+    if not isinstance(indexes, np.ndarray):
+        indexes = np.array(indexes, dtype=np.int32)
+    return indexes
+
+
+def apply_candidate_and_disqualified_indexes(
+    x: np.ndarray,
+    candidate_indexes: Optional[Union[NDArray[np.int32], List[int]]] = None,
+    disqualified_indexes: Optional[Union[NDArray[np.int32], List[int]]] = None,
+) -> np.ndarray:
+    x = x.copy() # Don't modify in place - that'd be too sneaky!
+    if disqualified_indexes is not None:
+        # Make these indexes impossible to be the top-k.
+        x[resolve_indexes_type(disqualified_indexes)] = -np.inf
+    if candidate_indexes is not None:
+        # Make ALL BUT these indexes impossible to be the top-k.
+        inferred_disqualified_indexes = np.setdiff1d(
+            np.arange(len(x)),
+            resolve_indexes_type(candidate_indexes),
+        )
+        x[inferred_disqualified_indexes] = -np.inf
+    return x
 
 
 def chunkify(seq: List[T], n: int) -> List[List[T]]:

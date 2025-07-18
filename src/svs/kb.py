@@ -17,6 +17,7 @@ from typing import (
 )
 
 import numpy as np
+from numpy.typing import NDArray
 
 import networkx as nx  # type: ignore
 
@@ -42,6 +43,7 @@ from .util import (
     get_top_pairs,
     resolve_to_local_uncompressed_file,
     delete_file_if_exists,
+    apply_candidate_and_disqualified_indexes,
 )
 
 import logging
@@ -1172,6 +1174,8 @@ class AsyncKB:
         self,
         query: str,
         n: int,
+        candidate_indexes: Optional[Union[NDArray[np.int32], List[int]]] = None,
+        disqualified_indexes: Optional[Union[NDArray[np.int32], List[int]]] = None,
     ) -> List[Retrieval]:
         _LOG.info(f"retrieving {n} documents with query string: {query}")
         loop = asyncio.get_running_loop()
@@ -1183,10 +1187,12 @@ class AsyncKB:
         _LOG.info("got embedding for query!")
         def superheavy() -> List[Tuple[float, int]]:
             x = np.dot(embeddings_matrix, query_vec)  # numpy go brrr
-            emb_ids = []
-            for score, index in get_top_k(x, n):
-                emb_ids.append((score, int(emb_id_lookup[index])))
-            return emb_ids
+            x = apply_candidate_and_disqualified_indexes(
+                x,
+                candidate_indexes,
+                disqualified_indexes,
+            )
+            return get_top_k(x, n)
         emb_ids = await loop.run_in_executor(None, superheavy)
         _LOG.info(f"computed {embeddings_matrix.shape[0]} cosine similarities")
         async with self._get_lock():
@@ -1609,6 +1615,8 @@ class KB:
         self,
         query: str,
         n: int,
+        candidate_indexes: Optional[Union[NDArray[np.int32], List[int]]] = None,
+        disqualified_indexes: Optional[Union[NDArray[np.int32], List[int]]] = None,
     ) -> List[Retrieval]:
         _LOG.info(f"retrieving {n} documents with query string: {query}")
         assert self.db is not None
@@ -1621,6 +1629,11 @@ class KB:
         _LOG.info("got embedding for query!")
         def superheavy() -> List[Tuple[float, int]]:
             x = np.dot(embeddings_matrix, query_vec)  # numpy go brrr
+            x = apply_candidate_and_disqualified_indexes(
+                x,
+                candidate_indexes,
+                disqualified_indexes,
+            )
             emb_ids = []
             for score, index in get_top_k(x, n):
                 emb_ids.append((score, int(emb_id_lookup[index])))
